@@ -106,3 +106,7 @@ code {
     stroke-dashoffset: 0;
     opacity: 1;
   }
+}
+
+/* Pedestrian animation handled by SVG animateMotion */
+

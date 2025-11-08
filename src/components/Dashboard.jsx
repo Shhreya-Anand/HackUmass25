@@ -95,4 +95,14 @@ const Dashboard = () => {
           responseTime={fireDetected ? 1.8 : 0}
         />
       </div>
-      {fireDe
+      {fireDetected && (
+        <button className="clear-alert-btn" onClick={clearAlert}>
+          Clear Alert
+        </button>
+      )}
+    </div>
+  )
+}
+
+export default Dashboard
+
