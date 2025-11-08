@@ -1,0 +1,56 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-primary);
+  position: relative;
+}
+
+.dashboard-main {
+  display: flex;
+  flex: 1;
+  gap: 1rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.dashboard-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-right {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.dashboard-bottom {
+  height: 120px;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+}
+
+.clear-alert-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 59, 59, 0.2);
+  border: 1px solid var(--alert-red);
+  color: var(--text-primary);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  z-index: 1000;
+  transition: all 0.3s ease;
+}
+
+.clear-alert-btn:hover {
+  background: rgba(255, 59, 59, 0.3);
+  box-shadow: 0 0 20px rgba(255, 59, 59, 0.4);
+}
+

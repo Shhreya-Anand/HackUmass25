@@ -1,0 +1,229 @@
+# 🚨 ExoRoute — Fire Detection and Evacuation Visualization System (Stanford Campus)
+
+## 1. Overview
+**ExoRoute** is a real-time fire monitoring and evacuation visualization dashboard built for the **Stanford campus**.  
+It combines computer vision–based fire detection with an interactive evacuation map that dynamically guides people to safety when an emergency occurs.
+
+The app is designed as a **command-center dashboard**, blending visual storytelling and actionable intelligence.  
+It should look cinematic, intuitive, and data-driven — as if it’s running in the Stanford emergency response HQ.
+
+---
+
+## 2. UI Philosophy
+
+- **Futuristic Control Center aesthetic**: dark background, glowing nodes, clean typography.
+- **Calm → Alert transition**: the UI should visually shift tone when fire is detected.
+- **Split-screen narrative**: left side shows *what happened*, right side shows *what to do*.
+- **Smooth animations**: avoid jumpy transitions; use soft glows, zooms, and fade-ins.
+
+---
+
+## 3. Screen Layout
+
+### 🧭 **Main Dashboard Layout**
+
++---------------------------------------------------------------+
+
+[ Left Panel: CCTV Monitoring Feeds ]	[ Right Panel: Evacuation Map ]
+- Real-time video tiles	- Stanford map (top-down)
+- Fire detection overlays	- Node & route visualization
+- Status indicators	- Alert + evacuation info
++---------------------------------------------------------------+	
+[ Bottom Bar: Timeline & System Status ]	
++---------------------------------------------------------------+	
+
+markdown
+Copy code
+
+---
+
+## 4. Left Panel — “Surveillance Grid”
+
+### Purpose
+Displays multiple stationary CCTV feeds from key campus locations, transitioning from routine monitoring to an active alert view when a fire is detected.
+
+### Design Details
+- **Layout:** 2x2 grid of video tiles (`Camera A`, `Camera B`, `Camera C`, `Camera D`)
+- **Video feeds:** looped clips of pedestrians walking on Stanford campus roads.
+- **Overlay elements:**
+  - `LIVE` tag (top-left, red)
+  - Timestamp (top-right)
+  - Camera label (bottom-left, white text, slight blur backdrop)
+- **Visual style:**
+  - Slight CRT static / vignette effect for realism.
+  - Rounded corners (`border-radius: 1rem`).
+  - Dim blue-gray color grading before an alert.
+
+### Fire Detection State
+When a fire is detected in a camera feed:
+- The feed border glows **red** (pulsing).
+- A small alert panel appears inside the tile:
+🔥 Fire Detected
+Location: Hoover Tower Road
+Confidence: 97%
+Time: 13:26:05
+
+markdown
+Copy code
+- The remaining camera feeds desaturate (grayscale) to direct attention.
+
+---
+
+## 5. Right Panel — “Evacuation Map”
+
+### Purpose
+Visualizes the affected area on a **stylized map of Stanford’s campus** and dynamically shows safe evacuation routes.
+
+### Base Map
+- **Visual style:** Dark slate background with light-gray roads and minimalistic building outlines.
+- **Nodes:** Represent each CCTV location (A–D) with small glowing dots (white in normal mode, red in alert).
+- **Labels:** Building names, major landmarks (Hoover Tower, Main Quad, etc.).
+
+### Alert Mode (Fire Detected)
+- The node corresponding to the affected camera **glows bright red**, expanding softly (pulsing halo).
+- A translucent **danger radius** (red gradient circle) appears around the node.
+- **Evacuation routes** animate in green:
+- Curved lines from the fire node → safe exits.
+- Lines pulse outward (indicating direction of movement).
+- **Pedestrian icons** (tiny moving dots) simulate people moving along the green routes.
+
+### Info Panel (Right side overlay)
+A semi-transparent sidecard with contextual data:
+🚨 EMERGENCY ALERT
+Fire detected near Hoover Tower Road
+Evacuation initiated for nearby zones.
+
+🧭 Safe Exits:
+
+Main Quad Gate
+
+Lasuen Walk
+
+Campus Drive North
+
+👥 Pedestrians Detected: 14
+🔥 Fire Confidence: 97%
+
+yaml
+Copy code
+- Animates in from the right with a slide + fade effect.
+
+---
+
+## 6. Bottom Bar — “Event Timeline & System Status”
+
+### Purpose
+Provides temporal context and live system state.
+
+### Elements
+- **Timeline:** horizontal scrollable bar showing:
+13:24 – Normal monitoring
+13:25 – Heat anomaly detected
+13:26 – Fire confirmed
+13:26 – Evacuation route activated
+
+yaml
+Copy code
+- **Status metrics (right-aligned):**
+- Fire Detected: ✅ / ❌
+- Active Routes: 2
+- Response Time: 1.8s
+- System Mode: ALERT / NORMAL
+
+### Style
+- Thin, glowing progress bar animation for timeline flow.
+- Subtle haptic-style feedback (pulsing dot) at current timestamp.
+
+---
+
+## 7. Color Palette
+
+| Purpose | Color | Notes |
+|----------|--------|-------|
+| Background | #0C0F14 | Deep charcoal for contrast |
+| Normal text | #E4E4E4 | High readability |
+| Accent Blue | #1E90FF | Calm operational mode |
+| Alert Red | #FF3B3B | Fire detection / emergency |
+| Safe Green | #34D399 | Evacuation routes |
+| Map Lines | #7F8C8D | Subtle gray outlines |
+
+---
+
+## 8. Animations & Transitions
+
+| Interaction | Animation | Duration |
+|--------------|------------|-----------|
+| Fire detected | Red glow pulse + siren sound | 0.5s pulse, continuous |
+| Map route reveal | Green line draw animation | 1.2s |
+| Info panel open | Slide-in from right + fade | 0.6s |
+| Timeline event | Dot blink + progress shift | 0.4s |
+| Return to normal | All feeds fade to color, map resets | 1.0s |
+
+All animations should feel **fluid and cinematic**, not game-like — think NASA or smart city dashboards.
+
+---
+
+## 9. User Flow Summary
+
+1. **Idle Mode (Monitoring)**  
+ - 4 CCTV feeds running smoothly.  
+ - Map shows all nodes (white).  
+ - Status = NORMAL.
+
+2. **Detection Event**  
+ - Fire detected in one feed → camera border flashes red.  
+ - Right map highlights node.  
+ - Alert info panel slides in.  
+ - Alarm sound plays softly.  
+
+3. **Evacuation Visualization**  
+ - Green evacuation routes animate from red zone.  
+ - Pedestrian icons move along paths.  
+ - Timeline updates live.
+
+4. **Resolution**  
+ - Fire alert clears → red node fades to orange → normal state returns.  
+ - Map re-centers and all feeds return to normal color.
+
+---
+
+## 10. Assets Required
+
+| Asset | Type | Description |
+|--------|------|-------------|
+| CCTV videos | MP4 | 4 clips from Stanford campus with pedestrians |
+| Fire event video | MP4 | Footage showing a small fire in one node |
+| Stanford map | SVG / PNG | Stylized map (top-down) |
+| Icons | PNG / SVG | Fire, pedestrian, exit, alert |
+| Alert sound | MP3 | Subtle siren or system beep |
+
+---
+
+## 11. Future Enhancements
+- Integrate **real-time model inference** via API (e.g., fire detection from webcam feed).
+- Add **sensor data overlays** (temperature, smoke density).
+- Implement **multi-campus support** via modular node map.
+- Add **post-event analytics dashboard**.
+
+---
+
+## 12. Demo Script (for presentation)
+1. **Scene 1 — Monitoring:** Calm CCTV feeds of Stanford campus.  
+2. **Scene 2 — Event:** Fire suddenly appears on Camera C; red alert flashes.  
+3. **Scene 3 — Response:** Map zooms into Hoover Tower zone, routes glow green.  
+4. **Scene 4 — Evacuation:** Animated pedestrian movement to safe exits.  
+5. **Scene 5 — Resolution:** Alert clears, system resets, summary panel shown.
+
+---
+
+## 13. Success Criteria
+- 🔴 Clear, immediate fire alert visualization.
+- 🟢 Accurate, intuitive evacuation path mapping.
+- 🎬 Smooth, cinematic transitions and polished UI.
+- 💡 Easy to expand to more cameras or locations.
+
+---
+
+**Document Owner:** Shhreya Anand  
+**Project:** ExoRoute  
+**Version:** v1.0 — November 2025  

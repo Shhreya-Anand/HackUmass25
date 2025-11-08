@@ -1,0 +1,123 @@
+.alert-panel {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 320px;
+  background: rgba(20, 25, 35, 0.95);
+  border: 2px solid var(--alert-red);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 0 40px rgba(255, 59, 59, 0.4);
+  z-index: 100;
+  animation: slide-in-right 0.6s ease-out;
+  font-family: 'Inter', sans-serif;
+}
+
+.alert-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 59, 59, 0.3);
+}
+
+.alert-icon {
+  font-size: 1.5rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.alert-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--alert-red);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.alert-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.alert-message {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.alert-subtext {
+  font-size: 0.85rem;
+  color: rgba(228, 228, 228, 0.7);
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.alert-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.alert-section-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--safe-green);
+  font-family: 'Inter', sans-serif;
+}
+
+.safe-exits-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.safe-exit-item {
+  padding: 0.5rem 0.75rem;
+  background: rgba(52, 211, 153, 0.1);
+  border-left: 3px solid var(--safe-green);
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s ease;
+}
+
+.safe-exit-item:hover {
+  background: rgba(52, 211, 153, 0.2);
+  transform: translateX(4px);
+}
+
+.alert-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.alert-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.metric-label {
+  color: rgba(228, 228, 228, 0.8);
+  font-family: 'Inter', sans-serif;
+}
+
+.metric-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+}
+
