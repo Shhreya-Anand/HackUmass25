@@ -1,4 +1,4 @@
-# 🚨 ExoRoute — Fire Detection and Evacuation Visualization System
+# ExoRoute — Fire Detection and Evacuation Visualization System
 
 A real-time fire monitoring and evacuation visualization dashboard built for the Stanford campus. This application combines computer vision–based fire detection with an interactive evacuation map that dynamically guides people to safety when an emergency occurs.
 
@@ -128,6 +128,4 @@ The built files will be in the `dist/` directory.
 This project is part of HackUMass 2025.
 
 ## Author
-
-Shhreya Anand
 
