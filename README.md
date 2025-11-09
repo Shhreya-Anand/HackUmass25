@@ -1,19 +1,22 @@
-# ExoRoute — Fire Detection and Evacuation Visualization System
+# ExoRoute — Fire Detection/Disaster Management and Evacuation Visualization System 
 
-A real-time fire monitoring and evacuation visualization dashboard built for the Stanford campus. This application combines computer vision–based fire detection with an interactive evacuation map that dynamically guides people to safety when an emergency occurs.
+A real-time fire monitoring and evacuation visualization dashboard built for Uiversity Campuses. This application combines computer vision–based fire detection with an interactive evacuation map that dynamically guides people to safety when an emergency occurs using a greedy-based flow algorithm. 
 
 ## Features
 
 - **Real-time CCTV Monitoring**: 2x2 grid of camera feeds with live timestamps
 - **Fire Detection Alerts**: Visual and audio alerts when fire is detected
-- **Interactive Evacuation Map**: Dynamic map showing safe evacuation routes
+- **Interactive Evacuation Map**: Dynamic map showing safe evacuation routes for individuals intheir respective locations
 - **Event Timeline**: Real-time timeline of system events and status
 - **Cinematic UI**: Futuristic control center aesthetic with smooth animations
 
 ## Prerequisites
-
+Frontend 
 - Node.js 16+ and npm/yarn
 - Video files in the `videos/` folder (see Assets section)
+
+Backend: 
+- Python version 3.11.1
 
 ## Installation
 
