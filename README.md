@@ -1,4 +1,4 @@
-# ExoRoute — Fire Detection/Disaster Management and Evacuation Visualization System 
+# FireFlee: Fire Detection/Disaster Management and Evacuation Visualization System 
 
 A real-time fire monitoring and evacuation visualization dashboard built for Uiversity Campuses. This application combines computer vision–based fire detection with an interactive evacuation map that dynamically guides people to safety when an emergency occurs using a greedy-based flow algorithm. 
 
