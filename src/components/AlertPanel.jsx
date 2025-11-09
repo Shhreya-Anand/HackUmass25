@@ -1,7 +1,7 @@
 import React from 'react'
 import './AlertPanel.css'
 
-const AlertPanel = ({ fireData, activeCamera }) => {
+const AlertPanel = ({ fireData, activeCamera, voiceAgentActive }) => {
   if (!fireData) return null
 
   const safeExits = [
@@ -22,6 +22,23 @@ const AlertPanel = ({ fireData, activeCamera }) => {
           <br />
           <span className="alert-subtext">Evacuation initiated for nearby zones.</span>
         </div>
+        
+        {voiceAgentActive && (
+          <div className="alert-section" style={{ 
+            backgroundColor: 'rgba(255, 193, 7, 0.2)', 
+            padding: '1rem', 
+            borderRadius: '8px',
+            marginTop: '1rem',
+            border: '2px solid rgba(255, 193, 7, 0.5)'
+          }}>
+            <div className="alert-section-title" style={{ color: '#FFC107' }}>
+              🎤 Voice Agent Active
+            </div>
+            <div style={{ color: '#FFC107', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+              Please state your current location when prompted.
+            </div>
+          </div>
+        )}
         
         <div className="alert-section">
           <div className="alert-section-title">🧭 Safe Exits:</div>

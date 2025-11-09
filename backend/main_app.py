@@ -8,8 +8,13 @@ import threading # For the background scanner
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from fastapi.responses import StreamingResponse
+from typing import List, Optional
 from dotenv import load_dotenv
+import asyncio
+from elevenlabs.client import ElevenLabs
+from elevenlabs.conversational_ai.conversation import Conversation
+from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
 
 # Load environment variables from .env file
 load_dotenv()
@@ -21,6 +26,14 @@ CURRENT_WORLD_STATE = {
     "crowd_data": []
 }
 STATE_LOCK = threading.Lock()
+
+# Voice agent state
+VOICE_AGENT_STATE = {
+    "location": None,
+    "is_active": False,
+    "session_id": None
+}
+VOICE_LOCK = threading.Lock()
 
 # --- CORRECTED VIDEO_SOURCES ---
 # These keys (P1, P2, etc.) MUST match your graph.json
@@ -423,6 +436,229 @@ def get_safe_path(start_node: str = Query(..., description="The starting node ID
     else:
         print(f"   NO PATH FOUND from {start_node} to any valid exit.")
         raise HTTPException(status_code=404, detail="No safe path found.")
+
+
+# --- 8. Voice Agent Integration ---
+
+class FireAlertVoiceAgent:
+    def __init__(self, session_id: str):
+        self.client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_4ad9511a354442c0991c3d3081f679fdd4051df3a91d6c71"))
+        self.conversation = None
+        self.location_detected = None
+        self.session_id = session_id
+        self.callback_queue = asyncio.Queue()
+        
+    async def on_message(self, message):
+        """Callback when agent receives a message"""
+        print(f"\n[Voice Agent] Role: {message.role}, Content: {message.content}")
+        
+        # If user provided location, store it
+        if message.role == "user" and message.content:
+            # Try to extract node ID from user's response (e.g., "P1", "I'm at P5", etc.)
+            location = self._extract_node_id(message.content)
+            if location:
+                self.location_detected = location
+                print(f"\n✓ Location captured: {self.location_detected}")
+                
+                # Update global state
+                with VOICE_LOCK:
+                    VOICE_AGENT_STATE["location"] = location
+                    VOICE_AGENT_STATE["is_active"] = False
+                
+                await self.callback_queue.put({
+                    "type": "location",
+                    "location": location,
+                    "session_id": self.session_id
+                })
+        
+        # Send message to callback queue for streaming
+        await self.callback_queue.put({
+            "type": "message",
+            "role": message.role,
+            "content": message.content,
+            "session_id": self.session_id
+        })
+    
+    def _extract_node_id(self, text: str) -> Optional[str]:
+        """Extract node ID (P1, P2, etc.) from user's text response"""
+        import re
+        # Look for patterns like P1, P2, P10, etc.
+        match = re.search(r'\bP\d+\b', text.upper())
+        if match:
+            return match.group(0)
+        return None
+    
+    async def on_status_change(self, status):
+        """Callback when connection status changes"""
+        print(f"[Voice Agent Status] {status}")
+        await self.callback_queue.put({
+            "type": "status",
+            "status": str(status),
+            "session_id": self.session_id
+        })
+    
+    async def on_mode_change(self, mode):
+        """Callback when conversation mode changes"""
+        print(f"[Voice Agent Mode] {mode.mode}")
+    
+    async def on_error(self, error):
+        """Callback when error occurs"""
+        print(f"[Voice Agent Error] {error}")
+        await self.callback_queue.put({
+            "type": "error",
+            "error": str(error),
+            "session_id": self.session_id
+        })
+    
+    async def run_fire_alert(self, agent_id: str):
+        """Main conversation flow with ElevenLabs Conversational AI"""
+        print("\n=== FIRE ALERT VOICE AGENT ACTIVATED ===\n")
+        
+        try:
+            # Initialize conversation with callbacks
+            self.conversation = Conversation(
+                client=self.client,
+                agent_id=agent_id,
+                requires_auth=False,
+                audio_interface=DefaultAudioInterface(),
+                callback_agent_response=self.on_message,
+                callback_user_transcript=self.on_message,
+                callback_latency_measurement=None,
+            )
+            
+            # Add event listeners
+            self.conversation.on_status_change = self.on_status_change
+            self.conversation.on_mode_change = self.on_mode_change
+            self.conversation.on_error = self.on_error
+            
+            print("Starting conversation with fire alert agent...")
+            
+            # Start the conversation
+            await self.conversation.start_session()
+            
+            # Keep conversation alive until location is detected or timeout (60 seconds)
+            timeout = 60
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                if self.location_detected:
+                    print(f"Location detected: {self.location_detected}")
+                    break
+                await asyncio.sleep(0.5)
+            
+        except Exception as e:
+            print(f"Error in voice agent: {e}")
+            await self.callback_queue.put({
+                "type": "error",
+                "error": str(e),
+                "session_id": self.session_id
+            })
+        finally:
+            if self.conversation:
+                await self.conversation.end_session()
+            
+        return self.location_detected
+
+
+# Store active voice agent sessions
+active_voice_sessions = {}
+
+
+@app.get("/trigger_voice_alert")
+async def trigger_voice_alert():
+    """Trigger the voice alert agent to ask for user's location"""
+    import uuid
+    session_id = str(uuid.uuid4())
+    
+    # Get agent ID from environment or use default
+    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
+    
+    with VOICE_LOCK:
+        VOICE_AGENT_STATE["is_active"] = True
+        VOICE_AGENT_STATE["session_id"] = session_id
+        VOICE_AGENT_STATE["location"] = None
+    
+    # Create and store voice agent
+    agent = FireAlertVoiceAgent(session_id)
+    active_voice_sessions[session_id] = agent
+    
+    # Start voice agent in background task (use asyncio.create_task in async context)
+    task = asyncio.create_task(agent.run_fire_alert(agent_id))
+    # Don't await the task - let it run in background
+    
+    return {
+        "session_id": session_id,
+        "status": "started",
+        "message": "Voice alert agent activated. Please speak your location."
+    }
+
+
+@app.get("/voice_alert_stream/{session_id}")
+async def voice_alert_stream(session_id: str):
+    """Stream voice agent events (SSE)"""
+    async def event_generator():
+        if session_id not in active_voice_sessions:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Session not found'})}\n\n"
+            return
+        
+        agent = active_voice_sessions[session_id]
+        
+        # Send initial connection message
+        yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
+        
+        # Poll for messages from the agent's callback queue
+        timeout = 60  # 60 second timeout
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                # Get message from queue (with timeout)
+                message = await asyncio.wait_for(agent.callback_queue.get(), timeout=1.0)
+                yield f"data: {json.dumps(message)}\n\n"
+                
+                # If location is detected, break
+                if message.get("type") == "location":
+                    # Clean up session after location is detected
+                    with VOICE_LOCK:
+                        VOICE_AGENT_STATE["location"] = message.get("location")
+                        VOICE_AGENT_STATE["is_active"] = False
+                    break
+                    
+            except asyncio.TimeoutError:
+                # Send heartbeat to keep connection alive
+                yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                continue
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                break
+        
+        # Clean up session
+        if session_id in active_voice_sessions:
+            del active_voice_sessions[session_id]
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/get_voice_location/{session_id}")
+async def get_voice_location(session_id: str):
+    """Get the location from voice agent (polling endpoint)"""
+    with VOICE_LOCK:
+        if VOICE_AGENT_STATE["session_id"] == session_id:
+            location = VOICE_AGENT_STATE.get("location")
+            is_active = VOICE_AGENT_STATE.get("is_active", False)
+            
+            return {
+                "location": location,
+                "is_active": is_active,
+                "session_id": session_id
+            }
+        else:
+            return {
+                "location": None,
+                "is_active": False,
+                "session_id": session_id,
+                "error": "Session not found"
+            }
 
 # --- 7. Run the Server ---
 
