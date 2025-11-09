@@ -4,20 +4,73 @@ import './EvacuationMap.css'
 const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
   const svgRef = useRef(null)
 
-  // Camera positions on the map (normalized coordinates)
-  const cameraPositions = {
-    'Camera A': { x: 0.3, y: 0.4, label: 'Main Quad' },
-    'Camera B': { x: 0.5, y: 0.6, label: 'Lasuen Walk' },
-    'Camera C': { x: 0.4, y: 0.3, label: 'Hoover Tower' },
-    'Camera D': { x: 0.7, y: 0.5, label: 'Campus Drive' }
+  // All nodes with coordinates (image dimensions: 1322x670, viewBox: 1000x800)
+  const nodes = [
+    { id: 'P1', x: 490, y: 248, adjacent: ['P2', 'P7', 'P29', 'P4'], exit_node: false, name: 'The Oval (road)' },
+    { id: 'P2', x: 265, y: 248, adjacent: ['P1', 'P3', 'P28'], exit_node: false, name: 'Lasuen Street (near Anderson Collection)' },
+    { id: 'P3', x: 153, y: 248, adjacent: ['P2', 'P13'], exit_node: true, name: 'Lasuen Street (near Bing Concert Hall)' },
+    { id: 'P4', x: 469, y: 505, adjacent: ['P5', 'P9'], exit_node: false, name: 'Main Quad (History Corner, Building 40)' },
+    { id: 'P5', x: 619, y: 499, adjacent: ['P4', 'P6', 'P8'], exit_node: false, name: 'Main Quad (in front of Memorial Church)' },
+    { id: 'P6', x: 745, y: 499, adjacent: ['P5', 'P7', 'P24'], exit_node: false, name: 'Main Quad (Building 60)' },
+    { id: 'P7', x: 747, y: 243, adjacent: ['P1', 'P6', 'P14', 'P30'], exit_node: false, name: 'The Oval (road)' },
+    { id: 'P8', x: 615, y: 573, adjacent: ['P5', 'P9', 'P25'], exit_node: false, name: 'Main Quad (Southeast Corner)' },
+    { id: 'P9', x: 465, y: 572, adjacent: ['P4', 'P8', 'P11', 'P26'], exit_node: false, name: 'Main Quad (Southwest Corner)' },
+    { id: 'P10', x: 169, y: 574, adjacent: ['P12', 'P11', 'P27'], exit_node: true, name: 'Lomita Drive (near Cantor Arts Center)' },
+    { id: 'P11', x: 358, y: 569, adjacent: ['P9', 'P10'], exit_node: false, name: 'Lomita Mall (near Jen-Hsun Huang Engineering Center)' },
+    { id: 'P12', x: 153, y: 504, adjacent: ['P10', 'P13', 'P27'], exit_node: true, name: 'Lomita Drive' },
+    { id: 'P13', x: 153, y: 329, adjacent: ['P12'], exit_node: true, name: 'Corner of Lasuen Street and Lomita Drive (near McMurtry Building)' },
+    { id: 'P14', x: 960, y: 239, adjacent: ['P7', 'P15', 'P16', 'P31', 'P32'], exit_node: false, name: 'Hoover Tower' },
+    { id: 'P15', x: 960, y: 376, adjacent: ['P14', 'P18', 'P20'], exit_node: false, name: 'Hoover Institution (Herbert Hoover Memorial Building)' },
+    { id: 'P16', x: 1079, y: 248, adjacent: ['P14', 'P17', 'P20'], exit_node: false, name: 'Serra Street (at Knight Management Center / GSB)' },
+    { id: 'P17', x: 1311, y: 246, adjacent: ['P16', 'P21'], exit_node: true, name: 'Serra Street (at Schwab Residential Center)' },
+    { id: 'P18', x: 969, y: 505, adjacent: ['P15', 'P19', 'P23'], exit_node: false, name: 'Escondido Mall (near Graduate School of Education)' },
+    { id: 'P19', x: 1087, y: 504, adjacent: ['P18', 'P20', 'P21', 'P22'], exit_node: false, name: 'Salvatierra Street (near Faculty Club)' },
+    { id: 'P20', x: 1079, y: 370, adjacent: ['P15', 'P16', 'P19'], exit_node: false, name: 'Jane Stanford Way' },
+    { id: 'P21', x: 1314, y: 503, adjacent: ['P19', 'P17'], exit_node: true, name: 'Jane Stanford Way (near Bechtel International Center)' },
+    { id: 'P22', x: 1091, y: 659, adjacent: ['P19', 'P23'], exit_node: true, name: 'Munger Graduate Residence' },
+    { id: 'P23', x: 964, y: 659, adjacent: ['P18', 'P22', 'P24'], exit_node: false, name: 'Corner of Jane Stanford Way and Salvatierra Street' },
+    { id: 'P24', x: 756, y: 660, adjacent: ['P6', 'P23', 'P25'], exit_node: false, name: 'Jane Stanford Way (near Stanford Law School)' },
+    { id: 'P25', x: 619, y: 664, adjacent: ['P8', 'P24', 'P26'], exit_node: false, name: 'Escondido Mall (near Meyer Green)' },
+    { id: 'P26', x: 464, y: 662, adjacent: ['P9', 'P25', 'P27'], exit_node: false, name: 'Escondido Mall (near Meyer Green)' },
+    { id: 'P27', x: 170, y: 659, adjacent: ['P10', 'P12', 'P26'], exit_node: true, name: 'Rodin Sculpture Garden' },
+    { id: 'P28', x: 267, y: 6, adjacent: ['P29'], exit_node: true, name: 'Campus Drive' },
+    { id: 'P29', x: 480, y: 7, adjacent: ['P28', 'P1', 'P30'], exit_node: true, name: 'Palm Drive' },
+    { id: 'P30', x: 745, y: 6, adjacent: ['P29', 'P7', 'P31'], exit_node: true, name: 'Palm Drive' },
+    { id: 'P31', x: 964, y: 3, adjacent: ['P30', 'P14', 'P32'], exit_node: true, name: 'Corner of Palm Drive and Arboretum Road' },
+    { id: 'P32', x: 956, y: 112, adjacent: ['P31', 'P14'], exit_node: false, name: 'Galvez Street' }
+  ]
+
+  // Normalize coordinates from image dimensions (1322x670) to viewBox (1000x800)
+  // x: 0-1322 -> 0-1000, y: 0-670 -> 0-800
+  const normalizeX = (x) => (x / 1322) * 1000
+  const normalizeY = (y) => (y / 670) * 800
+
+  // Create node lookup map
+  const nodeMap = new Map(nodes.map(node => [node.id, node]))
+
+  // Camera positions (only 4 cameras: A->P1, B->P2, C->P3, D->P4)
+  const cameraNodeMap = {
+    'Camera A': 'P1',
+    'Camera B': 'P2',
+    'Camera C': 'P3',
+    'Camera D': 'P4'
   }
 
-  // Safe exit points
-  const safeExits = [
-    { x: 0.2, y: 0.2, label: 'Main Quad Gate' },
-    { x: 0.5, y: 0.9, label: 'Lasuen Walk' },
-    { x: 0.9, y: 0.4, label: 'Campus Drive North' }
-  ]
+  const cameraPositions = {
+    'Camera A': { x: normalizeX(490), y: normalizeY(248), label: 'P1', name: nodes.find(n => n.id === 'P1')?.name || '' },
+    'Camera B': { x: normalizeX(265), y: normalizeY(248), label: 'P2', name: nodes.find(n => n.id === 'P2')?.name || '' },
+    'Camera C': { x: normalizeX(153), y: normalizeY(248), label: 'P3', name: nodes.find(n => n.id === 'P3')?.name || '' },
+    'Camera D': { x: normalizeX(469), y: normalizeY(505), label: 'P4', name: nodes.find(n => n.id === 'P4')?.name || '' }
+  }
+
+  // Safe exit points (all exit nodes)
+  const exitNodes = nodes.filter(node => node.exit_node)
+  const safeExits = exitNodes.map(node => ({
+    x: normalizeX(node.x),
+    y: normalizeY(node.y),
+    label: node.id,
+    name: node.name
+  }))
 
   // Generate evacuation routes from fire location to safe exits
   const getEvacuationRoutes = () => {
@@ -36,6 +89,9 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
   const routes = getEvacuationRoutes()
   const firePosition = activeCamera ? cameraPositions[activeCamera] : null
 
+  // Get camera node IDs
+  const cameraNodeIds = new Set(Object.values(cameraNodeMap))
+
   return (
     <div className="evacuation-map-container">
       <div className="evacuation-map-header">
@@ -52,66 +108,45 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
           {/* Background */}
           <rect width="1000" height="800" fill="#0C0F14" />
           
-          {/* Roads - simplified Stanford campus layout */}
-          <g className="roads">
-            {/* Main roads */}
-            <path
-              d="M 200 200 L 800 200 L 800 600 L 200 600 Z"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="3"
-              fill="none"
-              opacity="0.3"
-            />
-            <path
-              d="M 300 150 L 300 650"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="2"
-              fill="none"
-              opacity="0.2"
-            />
-            <path
-              d="M 500 150 L 500 650"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="2"
-              fill="none"
-              opacity="0.2"
-            />
-            <path
-              d="M 700 150 L 700 650"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="2"
-              fill="none"
-              opacity="0.2"
-            />
-            <path
-              d="M 150 300 L 850 300"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="2"
-              fill="none"
-              opacity="0.2"
-            />
-            <path
-              d="M 150 500 L 850 500"
-              stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
-              strokeWidth="2"
-              fill="none"
-              opacity="0.2"
-            />
-          </g>
-
-          {/* Building outlines */}
-          <g className="buildings">
-            <rect x="250" y="250" width="100" height="80" fill="#1A1F2E" stroke="#7F8C8D" strokeWidth="1" opacity="0.5" />
-            <rect x="400" y="200" width="120" height="100" fill="#1A1F2E" stroke="#7F8C8D" strokeWidth="1" opacity="0.5" />
-            <rect x="600" y="350" width="100" height="90" fill="#1A1F2E" stroke="#7F8C8D" strokeWidth="1" opacity="0.5" />
-            <circle cx="400" cy="300" r="40" fill="#1A1F2E" stroke="#7F8C8D" strokeWidth="1" opacity="0.5" />
+          {/* Node connections (paths between adjacent nodes) */}
+          <g className="node-connections">
+            {(() => {
+              const drawnConnections = new Set()
+              return nodes.map(node => {
+                const nodeX = normalizeX(node.x)
+                const nodeY = normalizeY(node.y)
+                return node.adjacent.map(adjId => {
+                  // Avoid drawing duplicate connections
+                  const connectionKey = [node.id, adjId].sort().join('-')
+                  if (drawnConnections.has(connectionKey)) return null
+                  drawnConnections.add(connectionKey)
+                  
+                  const adjNode = nodeMap.get(adjId)
+                  if (!adjNode) return null
+                  const adjX = normalizeX(adjNode.x)
+                  const adjY = normalizeY(adjNode.y)
+                  return (
+                    <line
+                      key={connectionKey}
+                      x1={nodeX}
+                      y1={nodeY}
+                      x2={adjX}
+                      y2={adjY}
+                      stroke={fireDetected ? '#4A5568' : '#7F8C8D'}
+                      strokeWidth="2"
+                      opacity="0.3"
+                    />
+                  )
+                })
+              })
+            })()}
           </g>
 
           {/* Danger radius (when fire detected) */}
           {fireDetected && firePosition && (
             <circle
-              cx={firePosition.x * 1000}
-              cy={firePosition.y * 800}
+              cx={firePosition.x}
+              cy={firePosition.y}
               r="150"
               fill="url(#dangerGradient)"
               opacity="0.3"
@@ -134,7 +169,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
 
           {/* Evacuation routes */}
           {routes.map((route, index) => {
-            const routePath = `M ${route.from.x * 1000} ${route.from.y * 800} Q ${(route.from.x + route.to.x) * 500} ${(route.from.y + route.to.y) * 400} ${route.to.x * 1000} ${route.to.y * 800}`
+            const routePath = `M ${route.from.x} ${route.from.y} Q ${(route.from.x + route.to.x) / 2} ${(route.from.y + route.to.y) / 2} ${route.to.x} ${route.to.y}`
             return (
               <g key={route.id} className="evacuation-route">
                 {/* Hidden path for animation - must be defined first */}
@@ -186,19 +221,49 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
             )
           })}
 
+          {/* All nodes (non-exit, non-camera nodes) */}
+          {nodes.map(node => {
+            const nodeX = normalizeX(node.x)
+            const nodeY = normalizeY(node.y)
+            const isCameraNode = cameraNodeIds.has(node.id)
+            const isExitNode = node.exit_node
+
+            // Skip camera nodes and exit nodes (rendered separately)
+            if (isCameraNode || isExitNode) return null
+
+            return (
+              <g key={node.id} className="map-node">
+                <circle
+                  cx={nodeX}
+                  cy={nodeY}
+                  r="6"
+                  fill="#7F8C8D"
+                  stroke="#7F8C8D"
+                  strokeWidth="2"
+                  className="node-dot"
+                  opacity="0.6"
+                />
+              </g>
+            )
+          })}
+
           {/* Camera nodes */}
           {Object.entries(cameraPositions).map(([cameraId, pos]) => {
             const isFireNode = fireDetected && activeCamera === cameraId
+            const nodeId = cameraNodeMap[cameraId]
+            const node = nodeMap.get(nodeId)
+            const isExitNode = node?.exit_node || false
+
             return (
               <g key={cameraId} className={`camera-node ${isFireNode ? 'fire-node' : ''}`}>
                 {/* Pulsing halo for fire node */}
                 {isFireNode && (
                   <circle
-                    cx={pos.x * 1000}
-                    cy={pos.y * 800}
+                    cx={pos.x}
+                    cy={pos.y}
                     r="25"
                     fill="none"
-                    stroke={fireDetected ? '#FF3B3B' : '#E4E4E4'}
+                    stroke="#FF3B3B"
                     strokeWidth="3"
                     opacity="0.6"
                     className="node-halo"
@@ -211,20 +276,20 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                     />
                   </circle>
                 )}
-                {/* Main node */}
+                {/* Main node - larger if it's also an exit */}
                 <circle
-                  cx={pos.x * 1000}
-                  cy={pos.y * 800}
-                  r="12"
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={isExitNode ? "14" : "12"}
                   fill={isFireNode ? '#FF3B3B' : '#E4E4E4'}
-                  stroke={isFireNode ? '#FF3B3B' : '#7F8C8D'}
-                  strokeWidth="2"
+                  stroke={isFireNode ? '#FF3B3B' : (isExitNode ? '#34D399' : '#E4E4E4')}
+                  strokeWidth={isExitNode ? "3" : "2"}
                   className="node-dot"
                 >
                   {isFireNode && (
                     <animate
                       attributeName="r"
-                      values="12;15;12"
+                      values={isExitNode ? "14;17;14" : "12;15;12"}
                       dur="1s"
                       repeatCount="indefinite"
                     />
@@ -232,8 +297,8 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                 </circle>
                 {/* Node label */}
                 <text
-                  x={pos.x * 1000}
-                  y={pos.y * 800 - 20}
+                  x={pos.x}
+                  y={pos.y - 20}
                   fill={isFireNode ? '#FF3B3B' : '#E4E4E4'}
                   fontSize="14"
                   fontWeight="600"
@@ -243,8 +308,8 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   {cameraId}
                 </text>
                 <text
-                  x={pos.x * 1000}
-                  y={pos.y * 800 - 5}
+                  x={pos.x}
+                  y={pos.y - 5}
                   fill="#7F8C8D"
                   fontSize="10"
                   textAnchor="middle"
@@ -252,35 +317,64 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                 >
                   {pos.label}
                 </text>
+                {/* Exit indicator for camera nodes that are also exits */}
+                {isExitNode && !isFireNode && (
+                  <text
+                    x={pos.x}
+                    y={pos.y + 25}
+                    fill="#34D399"
+                    fontSize="9"
+                    textAnchor="middle"
+                    className="exit-indicator"
+                  >
+                    EXIT
+                  </text>
+                )}
               </g>
             )
           })}
 
-          {/* Safe exit markers */}
-          {safeExits.map((exit, index) => (
-            <g key={exit.label} className="safe-exit">
-              <circle
-                cx={exit.x * 1000}
-                cy={exit.y * 800}
-                r="8"
-                fill="#34D399"
-                stroke="#34D399"
-                strokeWidth="2"
-                opacity={fireDetected ? 1 : 0.5}
-              />
-              <text
-                x={exit.x * 1000}
-                y={exit.y * 800 - 15}
-                fill="#34D399"
-                fontSize="11"
-                fontWeight="600"
-                textAnchor="middle"
-                opacity={fireDetected ? 1 : 0.5}
-              >
-                {exit.label}
-              </text>
-            </g>
-          ))}
+          {/* Safe exit markers (exit nodes that are not camera nodes) */}
+          {safeExits.map((exit) => {
+            // Don't render exit if it's also a camera node (already rendered above)
+            const exitNodeId = exit.label
+            if (cameraNodeIds.has(exitNodeId)) return null
+            
+            return (
+              <g key={exit.label} className="safe-exit">
+                <circle
+                  cx={exit.x}
+                  cy={exit.y}
+                  r="10"
+                  fill="#34D399"
+                  stroke="#34D399"
+                  strokeWidth="2"
+                  opacity={fireDetected ? 1 : 0.7}
+                />
+                <text
+                  x={exit.x}
+                  y={exit.y - 15}
+                  fill="#34D399"
+                  fontSize="11"
+                  fontWeight="600"
+                  textAnchor="middle"
+                  opacity={fireDetected ? 1 : 0.7}
+                >
+                  {exit.label}
+                </text>
+                <text
+                  x={exit.x}
+                  y={exit.y + 20}
+                  fill="#34D399"
+                  fontSize="9"
+                  textAnchor="middle"
+                  opacity={fireDetected ? 1 : 0.7}
+                >
+                  EXIT
+                </text>
+              </g>
+            )
+          })}
 
           {/* Gradient definitions */}
           <defs>
