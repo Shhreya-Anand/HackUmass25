@@ -1,0 +1,8 @@
+[] Live Updates for Danger zones instead of it updating when clicked and no alert popup real
+[] Eleven Labs Alert 
+    - frontend calls eleven labs with all the info we got from the backend and then it just plays out what we get from mr eleven labs 
+[] register a .tech domain 
+[] host on vultr 
+
+-------- other fr ong 
+[] snowflake

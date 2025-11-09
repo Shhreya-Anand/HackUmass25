@@ -45,7 +45,6 @@ VIDEO_SOURCES = {
     "P14": "videos/d.mp4"
 }
 # Assuming b.mp4 is a "normal" video
-NORMAL_VIDEO_PATH = "videos/b.mp4" 
 
 # --- 2. Load Static Data (Graph & AI Model) ---
 
@@ -205,14 +204,8 @@ def scan_cctv_loop():
     while True:
         print(f"\n--- SCANNER (Time: {current_time_sec}s): Starting new scan... ---")
         
-        # 1. Decide which videos to use (Simulate the fire)
-        video_path_for_node_P1 = NORMAL_VIDEO_PATH 
-        if current_time_sec >= 10:
-            print("!!! SCANNER: INCIDENT! Using FIRE video for P1. !!!")
-            video_path_for_node_P1 = VIDEO_SOURCES["P1"]
-            
         snapshot_jobs = [
-            {"node_id": "P1", "source_video": video_path_for_node_P1},
+            {"node_id": "P1", "source_video": VIDEO_SOURCES["P1"]},
             {"node_id": "P2", "source_video": VIDEO_SOURCES["P2"]},
             {"node_id": "P4", "source_video": VIDEO_SOURCES["P4"]},
             {"node_id": "P5", "source_video": VIDEO_SOURCES["P5"]},
@@ -354,20 +347,37 @@ app.add_middleware(
 # --- 6. The API Endpoint for the Frontend ---
 
 @app.get("/get_path")
-def get_safe_path(start_node: str = Query(..., description="The starting node ID for pathfinding")):
+def get_safe_path(
+    start_node: str = Query(..., description="The starting node ID for pathfinding"),
+    affected_nodes: List[str] = Query(default=[], description="List of affected nodes from previous Gemini analysis")
+):
     """
     Finds the safest, lowest-cost path from a start_node to the
     nearest *auto-detected* exit_node, using the *live* world state.
+    If affected_nodes are provided, they are merged with the current world state.
     """
     
     with STATE_LOCK:
         danger_nodes = list(CURRENT_WORLD_STATE["danger_nodes"])
         crowd_data = list(CURRENT_WORLD_STATE["crowd_data"])
     
-    print(f"\n--- API CALL: /get_path ---")
-    print(f"   Start: {start_node}")
-    print(f"   Live Danger Nodes: {danger_nodes}")
-    print(f"   Live Crowd Data: {crowd_data}")
+    # Merge affected_nodes from frontend with current world state
+    # Use affected_nodes if provided, otherwise use world state
+    if affected_nodes:
+        # Combine affected_nodes with current danger_nodes (union, no duplicates)
+        combined_danger_nodes = list(set(danger_nodes + affected_nodes))
+        print(f"\n--- API CALL: /get_path ---")
+        print(f"   Start: {start_node}")
+        print(f"   Affected Nodes (from frontend): {affected_nodes}")
+        print(f"   Current World State Danger Nodes: {danger_nodes}")
+        print(f"   Combined Danger Nodes: {combined_danger_nodes}")
+        print(f"   Live Crowd Data: {crowd_data}")
+        danger_nodes = combined_danger_nodes
+    else:
+        print(f"\n--- API CALL: /get_path ---")
+        print(f"   Start: {start_node}")
+        print(f"   Live Danger Nodes: {danger_nodes}")
+        print(f"   Live Crowd Data: {crowd_data}")
 
     G_copy = G.copy()
     
