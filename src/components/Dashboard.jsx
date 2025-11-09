@@ -18,15 +18,77 @@ const Dashboard = () => {
   const [voiceSessionId, setVoiceSessionId] = useState(null)
   const [voiceAgentActive, setVoiceAgentActive] = useState(false)
   const pollingIntervalRef = useRef(null)
+  const audioRef = useRef(null)
+
+  // Generate and play alert audio using Eleven Labs
+  const generateAndPlayAlertAudio = async (dangerNodes, escapePath, startNode = null) => {
+    try {
+      console.log('Generating alert audio...', { dangerNodes, escapePath, startNode })
+      
+      // Convert Set to Array if needed
+      const dangerNodesArray = Array.isArray(dangerNodes) ? dangerNodes : Array.from(dangerNodes)
+      const escapePathArray = Array.isArray(escapePath) ? escapePath : escapePath
+      
+      // Call the audio generation endpoint
+      const response = await fetch('http://localhost:8080/generate_alert_audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          danger_nodes: dangerNodesArray,
+          escape_path: escapePathArray,
+          start_node: startNode
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate alert audio')
+      }
+      
+      // Get audio blob
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      // Create audio element and play
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      }
+      
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+      
+      // Play audio
+      audio.play().catch(error => {
+        console.error('Error playing audio:', error)
+      })
+      
+      // Clean up URL when audio ends
+      audio.addEventListener('ended', () => {
+        URL.revokeObjectURL(audioUrl)
+      })
+      
+      console.log('Alert audio playing...')
+      
+      // Update timeline
+      setTimelineEvents(prev => [
+        ...prev,
+        { time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
+          event: 'Emergency alert audio playing', 
+          active: true }
+      ])
+      
+    } catch (error) {
+      console.error('Error generating alert audio:', error)
+    }
+  }
 
   // Fetch evacuation path from backend
   const fetchEvacuationPath = async (nodeId) => {
     try {
-      // Build query parameters - include affected_nodes if we have them
+      // Build query parameters
       const params = new URLSearchParams({ start_node: nodeId })
-      if (affectedNodes.length > 0) {
-        affectedNodes.forEach(node => params.append('affected_nodes', node))
-      }
       
       const response = await fetch(`http://localhost:8080/get_path?${params.toString()}`)
       if (!response.ok) {
@@ -36,11 +98,9 @@ const Dashboard = () => {
       console.log('Evacuation path data:', data)
 
       // Update danger nodes - add new live_danger_nodes to the set
-      setDangerNodes(prev => {
-        const newSet = new Set(prev)
-        data.live_danger_nodes.forEach(nodeId => newSet.add(nodeId))
-        return newSet
-      })
+      const updatedDangerNodes = new Set()
+      data.live_danger_nodes.forEach(nodeId => updatedDangerNodes.add(nodeId))
+      setDangerNodes(updatedDangerNodes)
 
       // Store evacuation path data
       setEvacuationPath({
@@ -48,6 +108,15 @@ const Dashboard = () => {
         cost: data.cost,
         startNode: nodeId
       })
+
+      // Generate and play alert audio with danger nodes and escape path
+      if (data.path && data.path.length > 0) {
+        await generateAndPlayAlertAudio(
+          data.live_danger_nodes || [],
+          data.path,
+          nodeId
+        )
+      }
 
       // Update timeline
       setTimelineEvents(prev => [
@@ -128,7 +197,9 @@ const Dashboard = () => {
           setVoiceAgentActive(false)
           
           // Fetch evacuation path with the detected location
-          await fetchEvacuationPath(data.location)
+          const pathData = await fetchEvacuationPath(data.location)
+          
+          // Audio will be generated automatically in fetchEvacuationPath
           
           // Update timeline
           setTimelineEvents(prev => [
@@ -144,11 +215,15 @@ const Dashboard = () => {
     }, 1000) // Poll every 1 second
   }
 
-  // Cleanup polling on unmount
+  // Cleanup polling and audio on unmount
   useEffect(() => {
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
+      }
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
       }
     }
   }, [])

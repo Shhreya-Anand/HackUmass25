@@ -6,10 +6,11 @@ import os
 import time
 import threading # For the background scanner
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
 from elevenlabs.client import ElevenLabs
@@ -448,11 +449,165 @@ def get_safe_path(
         raise HTTPException(status_code=404, detail="No safe path found.")
 
 
+# --- 7.5. Eleven Labs Alert Audio Generation ---
+
+class AlertAudioRequest(BaseModel):
+    danger_nodes: List[str]
+    escape_path: List[str]
+    start_node: Optional[str] = None
+
+@app.post("/generate_alert_audio")
+async def generate_alert_audio(request: AlertAudioRequest):
+    """
+    Generate audio alert using Eleven Labs agent with danger nodes and escape path information.
+    Returns audio stream that can be played on frontend.
+    """
+    try:
+        # Extract data from request
+        danger_nodes = request.danger_nodes
+        escape_path = request.escape_path
+        start_node = request.start_node
+        
+        # Get Eleven Labs client
+        client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_a630bc671f2500c1cf7a882d7d249a83d6b9bd424f93742f"))
+        agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
+        
+        # Format the alert message
+        danger_nodes_str = ", ".join(danger_nodes) if danger_nodes else "none detected"
+        path_str = " -> ".join(escape_path) if escape_path else "no path available"
+        
+        # Create a natural language alert message
+        alert_message = f"""
+        Emergency Alert: Fire detected in the following areas: {danger_nodes_str}.
+        Please evacuate immediately using the following route: {path_str}.
+        Stay calm and follow the evacuation path. Do not use elevators.
+        """
+        
+        # Get node names for better readability
+        node_names = {}
+        for node in NODE_LIST:
+            node_names[node["id"]] = node.get("name", node["id"])
+        
+        # Format with node names if available
+        danger_names = [node_names.get(node, node) for node in danger_nodes]
+        path_names = [node_names.get(node, node) for node in escape_path]
+        
+        if danger_names:
+            danger_str = ", ".join(danger_names)
+        else:
+            danger_str = "no areas"
+            
+        if path_names:
+            path_str_formatted = " to ".join(path_names)
+        else:
+            path_str_formatted = "no evacuation route available"
+        
+        # Create a more natural alert message
+        alert_message = f"Emergency Alert. Fire has been detected in the following areas: {danger_str}. Please evacuate immediately. Follow this evacuation route: {path_str_formatted}. Stay calm, do not run, and follow the marked evacuation path. Do not use elevators. Proceed to the nearest exit."
+        
+        print(f"\n--- GENERATING ALERT AUDIO ---")
+        print(f"   Danger Nodes: {danger_nodes}")
+        print(f"   Escape Path: {escape_path}")
+        print(f"   Message: {alert_message[:100]}...")
+        
+        # Use Eleven Labs text-to-speech API
+        # For agents, we need to get the agent's voice ID or use the agent's conversational API
+        # Let's try using the agent's conversational API to send a message and get audio
+        
+        # Alternative: Use text-to-speech with agent's voice
+        # First, let's try to get the agent info to find its voice ID
+        try:
+            # Get agent details
+            agent_info = client.agents.get(agent_id=agent_id)
+            voice_id = None
+            
+            # Try to get voice ID from agent
+            if hasattr(agent_info, 'voice_id'):
+                voice_id = agent_info.voice_id
+            elif hasattr(agent_info, 'voice') and hasattr(agent_info.voice, 'voice_id'):
+                voice_id = agent_info.voice.voice_id
+            
+            # If we have a voice ID, use text-to-speech API
+            if voice_id:
+                print(f"   Using agent voice ID: {voice_id}")
+                audio_generator = client.text_to_speech.convert(
+                    voice_id=voice_id,
+                    text=alert_message,
+                    model_id="eleven_multilingual_v2",
+                    output_format="mp3_44100_128"
+                )
+                
+                # Collect audio chunks
+                audio_data = b""
+                for chunk in audio_generator:
+                    audio_data += chunk
+                
+                # Return audio as streaming response
+                return StreamingResponse(
+                    iter([audio_data]),
+                    media_type="audio/mpeg",
+                    headers={
+                        "Content-Disposition": "inline; filename=alert.mp3",
+                        "Content-Length": str(len(audio_data))
+                    }
+                )
+        except Exception as e:
+            print(f"   Error getting agent voice ID: {e}")
+            print(f"   Falling back to conversational API approach...")
+        
+        # Fallback: Use conversational API approach
+        # This is more complex but works with agents directly
+        # For now, let's use a default voice or the agent's default voice
+        # We'll use the first available voice or a default one
+        
+        # Use text-to-speech with a default voice (you can change this)
+        # Or get voices and use the first one
+        try:
+            voices = client.voices.get_all()
+            if voices.voices and len(voices.voices) > 0:
+                default_voice_id = voices.voices[0].voice_id
+            else:
+                # Fallback to a known voice ID
+                default_voice_id = "JBFqnCBsd6RMkjVDRZzb"  # From the commented code
+            
+            print(f"   Using default voice ID: {default_voice_id}")
+            audio_generator = client.text_to_speech.convert(
+                voice_id=default_voice_id,
+                text=alert_message,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128"
+            )
+            
+            # Collect audio chunks
+            audio_data = b""
+            for chunk in audio_generator:
+                audio_data += chunk
+            
+            # Return audio as streaming response
+            return StreamingResponse(
+                iter([audio_data]),
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": "inline; filename=alert.mp3",
+                    "Content-Length": str(len(audio_data))
+                }
+            )
+        except Exception as e:
+            print(f"   Error generating audio: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate audio: {str(e)}")
+            
+    except Exception as e:
+        print(f"   FATAL ERROR in generate_alert_audio: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate alert audio: {str(e)}")
+
+
 # --- 8. Voice Agent Integration ---
 
 class FireAlertVoiceAgent:
     def __init__(self, session_id: str):
-        self.client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_4ad9511a354442c0991c3d3081f679fdd4051df3a91d6c71"))
+        self.client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_a630bc671f2500c1cf7a882d7d249a83d6b9bd424f93742f"))
         self.conversation = None
         self.location_detected = None
         self.session_id = session_id
