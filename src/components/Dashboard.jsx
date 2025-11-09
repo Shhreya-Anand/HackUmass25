@@ -1,17 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import SurveillanceGrid from './SurveillanceGrid'
 import EvacuationMap from './EvacuationMap'
 import Timeline from './Timeline'
 import AlertPanel from './AlertPanel'
 import './Dashboard.css'
-
-// Helper to get current time for timeline
-const getCurrentTime = () => 
-  new Date().toLocaleTimeString('en-US', { 
-    hour12: false, 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  })
 
 const Dashboard = () => {
   const [fireDetected, setFireDetected] = useState(false)
@@ -19,24 +11,81 @@ const Dashboard = () => {
   const [fireData, setFireData] = useState(null)
   const [systemMode, setSystemMode] = useState('NORMAL')
   const [timelineEvents, setTimelineEvents] = useState([
-    { time: getCurrentTime(), event: 'Normal monitoring', active: true }
+    { time: '13:24', event: 'Normal monitoring', active: true }
   ])
   const [dangerNodes, setDangerNodes] = useState(new Set())
   const [evacuationPath, setEvacuationPath] = useState(null)
-  const [voiceSessionId, setVoiceSessionId] = useState(null)
-  const [voiceAgentActive, setVoiceAgentActive] = useState(false)
-  const pollingIntervalRef = useRef(null)
+  const audioRef = useRef(null)
+
+  // Generate and play alert audio using Eleven Labs
+  const generateAndPlayAlertAudio = async (dangerNodes, escapePath, startNode = null) => {
+    try {
+      console.log('Generating alert audio...', { dangerNodes, escapePath, startNode })
+      
+      // Convert Set to Array if needed
+      const dangerNodesArray = Array.isArray(dangerNodes) ? dangerNodes : Array.from(dangerNodes)
+      const escapePathArray = Array.isArray(escapePath) ? escapePath : escapePath
+      
+      // Call the audio generation endpoint
+      const response = await fetch('http://localhost:8080/generate_alert_audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          danger_nodes: dangerNodesArray,
+          escape_path: escapePathArray,
+          start_node: startNode
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate alert audio')
+      }
+      
+      // Get audio blob
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      // Create audio element and play
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      }
+      
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+      
+      // Play audio
+      audio.play().catch(error => {
+        console.error('Error playing audio:', error)
+      })
+      
+      // Clean up URL when audio ends
+      audio.addEventListener('ended', () => {
+        URL.revokeObjectURL(audioUrl)
+      })
+      
+      console.log('Alert audio playing...')
+      
+      // Update timeline
+      setTimelineEvents(prev => [
+        ...prev,
+        { time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
+          event: 'Emergency alert audio playing', 
+          active: true }
+      ])
+      
+    } catch (error) {
+      console.error('Error generating alert audio:', error)
+    }
+  }
 
   // Fetch evacuation path from backend
-  const fetchEvacuationPath = useCallback(async (nodeId) => {
+  const fetchEvacuationPath = async (nodeId) => {
     try {
-      // Build query parameters - include affected_nodes (dangerNodes) if we have them
+      // Build query parameters
       const params = new URLSearchParams({ start_node: nodeId })
-      
-      // *** FIX: Use `dangerNodes` (a Set) instead of undefined `affectedNodes` ***
-      if (dangerNodes.size > 0) {
-        dangerNodes.forEach(node => params.append('affected_nodes', node))
-      }
       
       const response = await fetch(`http://localhost:8080/get_path?${params.toString()}`)
       if (!response.ok) {
@@ -45,13 +94,6 @@ const Dashboard = () => {
       const data = await response.json()
       console.log('Evacuation path data:', data)
 
-      // Update danger nodes - add new live_danger_nodes to the set
-      setDangerNodes(prev => {
-        const newSet = new Set(prev)
-        data.live_danger_nodes.forEach(nodeId => newSet.add(nodeId))
-        return newSet
-      })
-
       // Store evacuation path data
       setEvacuationPath({
         path: data.path,
@@ -59,10 +101,19 @@ const Dashboard = () => {
         startNode: nodeId
       })
 
+      // Generate and play alert audio with danger nodes and escape path
+      if (data.path && data.path.length > 0) {
+        await generateAndPlayAlertAudio(
+          data.live_danger_nodes || [],
+          data.path,
+          nodeId
+        )
+      }
+
       // Update timeline
       setTimelineEvents(prev => [
         ...prev,
-        { time: getCurrentTime(), 
+        { time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
           event: `Evacuation path calculated from ${nodeId}`, 
           active: true }
       ])
@@ -72,200 +123,106 @@ const Dashboard = () => {
       console.error('Error fetching evacuation path:', error)
       return null
     }
-  }, [dangerNodes]) // Depends on the current state of dangerNodes
+  }
 
-  // Poll for location from voice agent
-  const startLocationPolling = useCallback((sessionId) => {
-    // Clear any existing polling
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-    }
+  // Handle node click to get evacuation path
+  const handleNodeClick = async (nodeId) => {
+    await fetchEvacuationPath(nodeId)
+  }
 
-    // Poll every 5 seconds for location
-    pollingIntervalRef.current = setInterval(async () => {
+  // Poll for danger nodes from backend every 5 seconds
+  useEffect(() => {
+    const fetchDangerNodes = async () => {
       try {
-        const response = await fetch(`http://localhost:8080/get_voice_location/${sessionId}`)
+        const response = await fetch('http://localhost:8080/get_world_state')
         if (!response.ok) {
-          throw new Error('Failed to get voice location')
+          throw new Error('Failed to fetch danger nodes')
         }
         const data = await response.json()
-        console.log('Voice agent status:', data)
-
-        // If location is detected, fetch the path
-        if (data.location && !data.is_active) {
-          console.log('Location detected from voice agent:', data.location)
+        console.log('Danger nodes update:', data)
+        
+        // Update danger nodes
+        const updatedDangerNodes = new Set()
+        data.danger_nodes.forEach(nodeId => updatedDangerNodes.add(nodeId))
+        setDangerNodes(updatedDangerNodes)
+        
+        // Update fire detection status if danger nodes exist
+        if (data.danger_nodes.length > 0 && !fireDetected) {
+          setFireDetected(true)
+          setSystemMode('ALERT')
           
-          // Stop polling
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current)
-            pollingIntervalRef.current = null
-          }
-          
-          setVoiceAgentActive(false)
-          
-          // Update timeline *before* fetching path
           setTimelineEvents(prev => [
             ...prev,
-            { time: getCurrentTime(), 
-              event: `Location confirmed: ${data.location}`, 
+            { time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
+              event: 'Fire detected in building', 
               active: true }
           ])
-
-          // *** FIX: Fetch evacuation path with the detected location ***
-          await fetchEvacuationPath(data.location)
         }
       } catch (error) {
-        console.error('Error polling voice location:', error)
-        // Stop polling on error to prevent spam
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current)
-          pollingIntervalRef.current = null
-        }
+        console.error('Error fetching danger nodes:', error)
       }
-    }, 5000) // Poll every 5 seconds
-  }, [fetchEvacuationPath]) // Depends on fetchEvacuationPath
-
-  // Trigger fire alert agent when fire is detected
-  const triggerFireAgent = useCallback(async () => {
-    try {
-      console.log('🔥 Triggering fire alert agent...')
-      const response = await fetch('http://localhost:8080/trigger_fire_agent', {
-        method: 'POST'
-      })
-      if (!response.ok) {
-        throw new Error('Failed to trigger fire alert agent')
-      }
-      const data = await response.json()
-      console.log('Fire alert agent started:', data)
-      
-      setVoiceAgentActive(true)
-
-      // *** FIX: Set session ID and start polling ***
-      if (data.session_id) {
-        setVoiceSessionId(data.session_id)
-        startLocationPolling(data.session_id)
-      } else {
-        console.error('No session_id received from fire agent!')
-      }
-      
-      // Update timeline
-      setTimelineEvents(prev => [
-        ...prev,
-        { time: getCurrentTime(), 
-          event: '🔥 Fire alert agent activated - Agent is asking for location', 
-          active: true }
-      ])
-    } catch (error) {
-      console.error('Error triggering fire alert agent:', error)
     }
-  }, [startLocationPolling]) // Depends on startLocationPolling
+    
+    // Initial fetch
+    fetchDangerNodes()
+    
+    // Poll backend for danger nodes every 5 seconds
+    const interval = setInterval(fetchDangerNodes, 5000)
+    return () => clearInterval(interval)
+  }, [fireDetected])
 
-  // *** NEW FUNCTION: Centralized logic for triggering the alert ***
-  const initiateFireAlert = useCallback((detectedFireData) => {
-    console.log('🔥 Fire detected automatically! Danger nodes:', detectedFireData.danger_nodes)
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      }
+    }
+  }, [])
 
-    // Trigger fire detection UI
+  const triggerFireDetection = (cameraId, data) => {
     setFireDetected(true)
+    setActiveCamera(cameraId)
+    setFireData(data)
     setSystemMode('ALERT')
-    setFireData({
-      danger_nodes: detectedFireData.danger_nodes,
-      crowd_data: detectedFireData.crowd_data || []
-    })
-    
-    // Update danger nodes
-    setDangerNodes(new Set(detectedFireData.danger_nodes))
-    
-    // Update timeline
-    const currentTime = getCurrentTime()
-    setTimelineEvents(prev => [
-      ...prev,
-      { time: currentTime, event: 'Fire detected automatically', active: false },
-      { time: currentTime, event: `Danger nodes: ${detectedFireData.danger_nodes.join(', ')}`, active: true }
+
+    setTimelineEvents([
+      { time: '13:24', event: 'Normal monitoring', active: false },
+      { time: '13:25', event: 'Heat anomaly detected', active: false },
+      { time: '13:26', event: 'Fire confirmed', active: true }
     ])
-    
-    // Trigger fire alert agent - agent will ask where you are
-    triggerFireAgent()
-    
-    // Play alert sound
+
+    // Play alert sound (optional - will fail silently if file doesn't exist)
     try {
       const audio = new Audio('/sounds/alert.mp3')
       audio.volume = 0.3
       audio.play().catch(() => {
-        // Audio file not found or play interrupted - this is optional
+        // Audio file not found - this is optional
       })
     } catch (err) {
       // Audio not available - continue without sound
     }
-  }, [triggerFireAgent]) // Depends on triggerFireAgent
+  }
 
-  // Handle manual node click (fallback)
-  const handleNodeClick = useCallback(async (nodeId) => {
-    await fetchEvacuationPath(nodeId)
-  }, [fetchEvacuationPath]) // Depends on fetchEvacuationPath
-
-  // Auto-detect fire from backend world state
-  useEffect(() => {
-    const checkFireDetection = async () => {
-      try {
-        const response = await fetch('http://localhost:8080/get_world_state')
-        if (!response.ok) {
-          throw new Error('Failed to fetch world state')
-        }
-        const data = await response.json()
-        
-        // If fire is detected and wasn't detected before, trigger fire detection
-        if (data.has_fire && data.danger_nodes && data.danger_nodes.length > 0 && !fireDetected) {
-          // *** FIX: Call the centralized alert function ***
-          initiateFireAlert(data)
-        }
-        
-        // If fire is cleared (no danger nodes), clear the alert
-        if (!data.has_fire && fireDetected && (!data.danger_nodes || data.danger_nodes.length === 0)) {
-          console.log('Fire cleared - no danger nodes detected')
-          clearAlert()
-        }
-      } catch (error) {
-        console.error('Error checking fire detection:', error)
-      }
-    }
-    
-    // Poll backend for danger nodes every 5 seconds
-    const interval = setInterval(checkFireDetection, 9000)
-    // Initial check
-    checkFireDetection()
-    return () => clearInterval(interval)
-  }, [fireDetected, initiateFireAlert]) // Depends on fireDetected and the alert function
-
-  // Clear alert and reset state
-  const clearAlert = useCallback(() => {
+  const clearAlert = () => {
+    // Clear UI alerts and paths, but keep danger nodes
     setFireDetected(false)
     setActiveCamera(null)
     setFireData(null)
     setSystemMode('NORMAL')
-    setDangerNodes(new Set())
     setEvacuationPath(null)
-    setVoiceSessionId(null)
-    setVoiceAgentActive(false)
     
-    // Stop polling
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
+    // Stop any playing audio
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
     }
     
     setTimelineEvents([
-      { time: getCurrentTime(), event: 'Normal monitoring', active: true }
+      { time: '13:24', event: 'Normal monitoring', active: true }
     ])
-  }, []) // No dependencies needed
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-      }
-    }
-  }, []) // Empty dependency array, runs only on mount/unmount
+  }
 
   return (
     <div className="dashboard">
@@ -275,8 +232,6 @@ const Dashboard = () => {
             fireDetected={fireDetected}
             activeCamera={activeCamera}
             fireData={fireData}
-            // Pass initiateFireAlert as a prop if cameras can manually trigger it
-            // onManualFireDetect={initiateFireAlert} 
           />
         </div>
         <div className="dashboard-right">
@@ -292,7 +247,7 @@ const Dashboard = () => {
             <AlertPanel
               fireData={fireData}
               activeCamera={activeCamera}
-              voiceAgentActive={voiceAgentActive}
+              voiceAgentActive={false}
             />
           )}
         </div>
@@ -302,8 +257,8 @@ const Dashboard = () => {
           events={timelineEvents}
           systemMode={systemMode}
           fireDetected={fireDetected}
-          activeRoutes={fireDetected ? 2 : 0} // This is still hardcoded, but that's from the original
-          responseTime={fireDetected ? 1.8 : 0} // This is still hardcoded, but that's from the original
+          activeRoutes={fireDetected ? 2 : 0}
+          responseTime={fireDetected ? 1.8 : 0}
         />
       </div>
       {fireDetected && (
