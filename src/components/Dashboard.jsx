@@ -15,10 +15,17 @@ const Dashboard = () => {
   ])
   const [dangerNodes, setDangerNodes] = useState(new Set())
   const [evacuationPath, setEvacuationPath] = useState(null)
+  const [affectedNodes, setAffectedNodes] = useState([]) // Store affected nodes from Gemini
 
   const handleNodeClick = async (nodeId) => {
     try {
-      const response = await fetch(`http://localhost:8080/get_path?start_node=${nodeId}`)
+      // Build query parameters - include affected_nodes if we have them
+      const params = new URLSearchParams({ start_node: nodeId })
+      if (affectedNodes.length > 0) {
+        affectedNodes.forEach(node => params.append('affected_nodes', node))
+      }
+      
+      const response = await fetch(`http://localhost:8080/get_path?${params.toString()}`)
       if (!response.ok) {
         throw new Error('Failed to fetch evacuation path')
       }
@@ -30,6 +37,11 @@ const Dashboard = () => {
         data.live_danger_nodes.forEach(nodeId => newSet.add(nodeId))
         return newSet
       })
+      
+      // Save the affected nodes from the response for next API call
+      if (data.live_danger_nodes && data.live_danger_nodes.length > 0) {
+        setAffectedNodes(data.live_danger_nodes)
+      }
 
       // Set fire detected if we have danger nodes
       if (data.live_danger_nodes.length > 0) {
@@ -98,6 +110,7 @@ const Dashboard = () => {
     setSystemMode('NORMAL')
     setDangerNodes(new Set())
     setEvacuationPath(null)
+    setAffectedNodes([])
     setTimelineEvents([
       { time: '13:24', event: 'Normal monitoring', active: true }
     ])
