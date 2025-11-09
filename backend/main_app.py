@@ -7,7 +7,12 @@ import time
 import threading # For the background scanner
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- 1. Global State & Configuration ---
 
@@ -23,8 +28,8 @@ VIDEO_SOURCES = {
     "P1": "videos/a.mp4", # This node will change over time (fire)
     "P2": "videos/b.mp4",
     "P4": "videos/c.mp4",
-    "P5": "videos/d.mp4",
-    "P14": "videos/e.mp4"
+    "P5": "videos/e.mp4",
+    "P14": "videos/d.mp4"
 }
 # Assuming b.mp4 is a "normal" video
 NORMAL_VIDEO_PATH = "videos/b.mp4" 
@@ -144,6 +149,17 @@ def extract_frame_as_image(video_path, frame_time_sec, output_path):
         if fps == 0:
             fps = 30 
             print(f"Warning: Could not get FPS for {video_path}. Assuming {fps} FPS.")
+        
+        # Get video duration to cap frame_time_sec
+        frame_count = vid_cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        video_duration_sec = frame_count / fps if fps > 0 else 0
+        
+        # Cap frame_time_sec to video duration, cycling if needed
+        if video_duration_sec > 0:
+            frame_time_sec = frame_time_sec % video_duration_sec
+        else:
+            # Fallback: cap at 30 seconds if we can't determine duration
+            frame_time_sec = frame_time_sec % 30
             
         frame_id = int(fps * frame_time_sec)
         vid_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
@@ -200,7 +216,8 @@ def scan_cctv_loop():
                 print(f"Warning: Video file not found at {job['source_video']}. Skipping node {job['node_id']}.")
                 continue
             
-            frame_time = (current_time_sec % 5) + 1
+            # Use current_time_sec directly - extract_frame_as_image will handle capping to video duration
+            frame_time = current_time_sec
             temp_path = f"./temp_frame_{i}.jpg"
             success = extract_frame_as_image(job["source_video"], frame_time, temp_path)
             if success:
@@ -309,13 +326,22 @@ async def lifespan(app: FastAPI):
     print("Application shutdown.")
 
 app = FastAPI(title="Aegis AI - Main Server", lifespan=lifespan)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=False,  # Cannot be True with allow_origins=["*"]
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 # --- END OF LIFESPAN HANDLER ---
 
 
 # --- 6. The API Endpoint for the Frontend ---
 
 @app.get("/get_path")
-def get_safe_path(start_node: str):
+def get_safe_path(start_node: str = Query(..., description="The starting node ID for pathfinding")):
     """
     Finds the safest, lowest-cost path from a start_node to the
     nearest *auto-detected* exit_node, using the *live* world state.
@@ -404,4 +430,4 @@ if __name__ == "__main__":
     print("Starting FastAPI server and background scanner...")
     # --- PORT FIX ---
     # Running on a new, clean port
-    uvicorn.run(app, host="0.0.0.0", port=6023)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
