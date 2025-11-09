@@ -200,7 +200,7 @@ def scan_cctv_loop():
     current_time_sec = 0
     print("\n*** Background Scanner Thread STARTED ***\n")
     
-    global_wind = {'speed': '15mph', 'direction': 'NW'}
+    #global_wind = {'speed': '15mph', 'direction': 'NW'}
     
     while True:
         print(f"\n--- SCANNER (Time: {current_time_sec}s): Starting new scan... ---")
@@ -244,7 +244,7 @@ def scan_cctv_loop():
                 f"You are a *cautious* and *methodical* AI Incident Commander.",
                 f"Your job is to analyze *snapshot images* from CCTV feeds one by one with a high degree of precision.",
                 f"Here is the static map's layout (node list): {json.dumps(NODE_LIST)}", # <-- This is the fix
-                f"Here is the current wind data: {json.dumps(global_wind)}",
+                # f"Here is the current wind data: {json.dumps(global_wind)}",
                 "\n--- IMAGE FEEDS ---"
             ]
             
@@ -269,8 +269,8 @@ def scan_cctv_loop():
                     * ...and so on for all other nodes.
                 2.  **Second,** identify which node(s) (if any) are the source of the fire.
                 3.  **Third,** identify which node(s) (if any) show 'large crowds' (10+ people).
-                4.  **Fourth,** based on the wind and the fire location, predict the smoke's spread.
-                5.  **Finally,** call the `report_incident_details` function with:
+                
+                4.  **Finally,** call the `report_incident_details` function with:
                     a) a list of nodes that are *currently* on fire OR in the *direct path* of the predicted danger zone.
                     b) a list of all nodes where you see large crowds.
                 """
@@ -346,6 +346,22 @@ app.add_middleware(
 
 
 # --- 6. The API Endpoint for the Frontend ---
+
+@app.get("/get_world_state")
+def get_world_state():
+    """
+    Get the current world state including danger nodes and crowd data.
+    This endpoint allows the frontend to poll for live fire detection updates.
+    """
+    with STATE_LOCK:
+        danger_nodes = list(CURRENT_WORLD_STATE["danger_nodes"])
+        crowd_data = list(CURRENT_WORLD_STATE["crowd_data"])
+    
+    return {
+        "danger_nodes": danger_nodes,
+        "crowd_data": crowd_data,
+        "has_fire": len(danger_nodes) > 0
+    }
 
 @app.get("/get_path")
 def get_safe_path(
@@ -469,7 +485,7 @@ async def generate_alert_audio(request: AlertAudioRequest):
         start_node = request.start_node
         
         # Get Eleven Labs client
-        client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_a630bc671f2500c1cf7a882d7d249a83d6b9bd424f93742f"))
+        client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
         agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
         
         # Format the alert message
@@ -502,328 +518,137 @@ async def generate_alert_audio(request: AlertAudioRequest):
         else:
             path_str_formatted = "no evacuation route available"
         
-        # Create a more natural alert message
-        alert_message = f"Emergency Alert. Fire has been detected in the following areas: {danger_str}. Please evacuate immediately. Follow this evacuation route: {path_str_formatted}. Stay calm, do not run, and follow the marked evacuation path. Do not use elevators. Proceed to the nearest exit."
-        
-        print(f"\n--- GENERATING ALERT AUDIO ---")
+        print(f"\n--- TRIGGERING FIRE ALERT AGENT ---")
         print(f"   Danger Nodes: {danger_nodes}")
         print(f"   Escape Path: {escape_path}")
-        print(f"   Message: {alert_message[:100]}...")
         
-        # Use Eleven Labs text-to-speech API
-        # For agents, we need to get the agent's voice ID or use the agent's conversational API
-        # Let's try using the agent's conversational API to send a message and get audio
+        # Get agent ID
+        agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
         
-        # Alternative: Use text-to-speech with agent's voice
-        # First, let's try to get the agent info to find its voice ID
-        try:
-            # Get agent details
-            agent_info = client.agents.get(agent_id=agent_id)
-            voice_id = None
-            
-            # Try to get voice ID from agent
-            if hasattr(agent_info, 'voice_id'):
-                voice_id = agent_info.voice_id
-            elif hasattr(agent_info, 'voice') and hasattr(agent_info.voice, 'voice_id'):
-                voice_id = agent_info.voice.voice_id
-            
-            # If we have a voice ID, use text-to-speech API
-            if voice_id:
-                print(f"   Using agent voice ID: {voice_id}")
-                audio_generator = client.text_to_speech.convert(
-                    voice_id=voice_id,
-                    text=alert_message,
-                    model_id="eleven_multilingual_v2",
-                    output_format="mp3_44100_128"
-                )
-                
-                # Collect audio chunks
-                audio_data = b""
-                for chunk in audio_generator:
-                    audio_data += chunk
-                
-                # Return audio as streaming response
-                return StreamingResponse(
-                    iter([audio_data]),
-                    media_type="audio/mpeg",
-                    headers={
-                        "Content-Disposition": "inline; filename=alert.mp3",
-                        "Content-Length": str(len(audio_data))
-                    }
-                )
-        except Exception as e:
-            print(f"   Error getting agent voice ID: {e}")
-            print(f"   Falling back to conversational API approach...")
+        # Create and run the fire alert agent
+        # The agent will automatically yell "FIRE!" and ask where you are
+        agent = FireAlertAgent()
         
-        # Fallback: Use conversational API approach
-        # This is more complex but works with agents directly
-        # For now, let's use a default voice or the agent's default voice
-        # We'll use the first available voice or a default one
+        # Start the agent in a background task
+        # This will trigger the agent to speak automatically
+        task = asyncio.create_task(agent.run_fire_alert(agent_id))
         
-        # Use text-to-speech with a default voice (you can change this)
-        # Or get voices and use the first one
-        try:
-            voices = client.voices.get_all()
-            if voices.voices and len(voices.voices) > 0:
-                default_voice_id = voices.voices[0].voice_id
-            else:
-                # Fallback to a known voice ID
-                default_voice_id = "JBFqnCBsd6RMkjVDRZzb"  # From the commented code
-            
-            print(f"   Using default voice ID: {default_voice_id}")
-            audio_generator = client.text_to_speech.convert(
-                voice_id=default_voice_id,
-                text=alert_message,
-                model_id="eleven_multilingual_v2",
-                output_format="mp3_44100_128"
-            )
-            
-            # Collect audio chunks
-            audio_data = b""
-            for chunk in audio_generator:
-                audio_data += chunk
-            
-            # Return audio as streaming response
-            return StreamingResponse(
-                iter([audio_data]),
-                media_type="audio/mpeg",
-                headers={
-                    "Content-Disposition": "inline; filename=alert.mp3",
-                    "Content-Length": str(len(audio_data))
-                }
-            )
-        except Exception as e:
-            print(f"   Error generating audio: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to generate audio: {str(e)}")
-            
+        # Return immediately - agent is running in background
+        return {
+            "status": "started",
+            "message": "Fire alert agent activated. Agent is speaking now."
+        }
+        
     except Exception as e:
-        print(f"   FATAL ERROR in generate_alert_audio: {e}")
+        print(f"   Error triggering fire alert agent: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to generate alert audio: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger fire alert agent: {str(e)}")
 
 
 # --- 8. Voice Agent Integration ---
-
-class FireAlertVoiceAgent:
-    def __init__(self, session_id: str):
-        self.client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", "sk_a630bc671f2500c1cf7a882d7d249a83d6b9bd424f93742f"))
+class FireAlertAgent:
+    def __init__(self):
+        self.client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
         self.conversation = None
         self.location_detected = None
-        self.session_id = session_id
-        self.callback_queue = asyncio.Queue()
         
     async def on_message(self, message):
         """Callback when agent receives a message"""
-        print(f"\n[Voice Agent] Role: {message.role}, Content: {message.content}")
+        print(f"\n[Message] Role: {message.role}")
+        print(f"[Message] Content: {message.content}")
         
         # If user provided location, store it
         if message.role == "user" and message.content:
-            # Try to extract node ID from user's response (e.g., "P1", "I'm at P5", etc.)
-            location = self._extract_node_id(message.content)
-            if location:
-                self.location_detected = location
-                print(f"\n✓ Location captured: {self.location_detected}")
-                
-                # Update global state
-                with VOICE_LOCK:
-                    VOICE_AGENT_STATE["location"] = location
-                    VOICE_AGENT_STATE["is_active"] = False
-                
-                await self.callback_queue.put({
-                    "type": "location",
-                    "location": location,
-                    "session_id": self.session_id
-                })
-        
-        # Send message to callback queue for streaming
-        await self.callback_queue.put({
-            "type": "message",
-            "role": message.role,
-            "content": message.content,
-            "session_id": self.session_id
-        })
-    
-    def _extract_node_id(self, text: str) -> Optional[str]:
-        """Extract node ID (P1, P2, etc.) from user's text response"""
-        import re
-        # Look for patterns like P1, P2, P10, etc.
-        match = re.search(r'\bP\d+\b', text.upper())
-        if match:
-            return match.group(0)
-        return None
+            self.location_detected = message.content
+            print(f"\n✓ Location captured: {self.location_detected}")
     
     async def on_status_change(self, status):
         """Callback when connection status changes"""
-        print(f"[Voice Agent Status] {status}")
-        await self.callback_queue.put({
-            "type": "status",
-            "status": str(status),
-            "session_id": self.session_id
-        })
+        print(f"[Status] {status}")
     
     async def on_mode_change(self, mode):
         """Callback when conversation mode changes"""
-        print(f"[Voice Agent Mode] {mode.mode}")
+        print(f"[Mode] {mode.mode}")
     
     async def on_error(self, error):
         """Callback when error occurs"""
-        print(f"[Voice Agent Error] {error}")
-        await self.callback_queue.put({
-            "type": "error",
-            "error": str(error),
-            "session_id": self.session_id
-        })
+        print(f"[Error] {error}")
     
-    async def run_fire_alert(self, agent_id: str):
+    async def run_fire_alert(self, agent_id):
         """Main conversation flow with ElevenLabs Conversational AI"""
-        print("\n=== FIRE ALERT VOICE AGENT ACTIVATED ===\n")
+        print("\n=== FIRE ALERT SYSTEM ACTIVATED ===\n")
+        print("🔥 FIRE DETECTED! Agent is yelling 'FIRE!' and asking for your location.\n")
         
+        # Initialize conversation with callbacks
+        self.conversation = Conversation(
+            client=self.client,
+            agent_id=agent_id,
+            requires_auth=False,  # Set to True if agent requires authentication
+            audio_interface=DefaultAudioInterface(),
+            callback_agent_response=self.on_message,
+            callback_user_transcript=self.on_message,
+            callback_latency_measurement=None,
+        )
+        
+        # Add event listeners
+        self.conversation.on_status_change = self.on_status_change
+        self.conversation.on_mode_change = self.on_mode_change
+        self.conversation.on_error = self.on_error
+        
+        print("Starting conversation with fire alert agent...")
+        print("The agent will yell 'FIRE!' and ask for your location. Please speak clearly.\n")
+        
+        # Start the conversation
+        # The agent will automatically speak when the session starts
+        await self.conversation.start_session()
+        
+        # Wait for conversation to complete or timeout
         try:
-            # Initialize conversation with callbacks
-            self.conversation = Conversation(
-                client=self.client,
-                agent_id=agent_id,
-                requires_auth=False,
-                audio_interface=DefaultAudioInterface(),
-                callback_agent_response=self.on_message,
-                callback_user_transcript=self.on_message,
-                callback_latency_measurement=None,
-            )
-            
-            # Add event listeners
-            self.conversation.on_status_change = self.on_status_change
-            self.conversation.on_mode_change = self.on_mode_change
-            self.conversation.on_error = self.on_error
-            
-            print("Starting conversation with fire alert agent...")
-            
-            # Start the conversation
-            await self.conversation.start_session()
-            
-            # Keep conversation alive until location is detected or timeout (60 seconds)
-            timeout = 60
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                if self.location_detected:
-                    print(f"Location detected: {self.location_detected}")
-                    break
-                await asyncio.sleep(0.5)
-            
-        except Exception as e:
-            print(f"Error in voice agent: {e}")
-            await self.callback_queue.put({
-                "type": "error",
-                "error": str(e),
-                "session_id": self.session_id
-            })
+            # Keep conversation alive for 60 seconds or until user stops
+            # This gives time for the agent to speak and user to respond
+            await asyncio.sleep(60)
+        except KeyboardInterrupt:
+            print("\nStopping conversation...")
         finally:
-            if self.conversation:
-                await self.conversation.end_session()
-            
+            await self.conversation.end_session()
+            print("\n=== FIRE ALERT SESSION ENDED ===\n")
+        
         return self.location_detected
 
 
-# Store active voice agent sessions
-active_voice_sessions = {}
-
-
-@app.get("/trigger_voice_alert")
-async def trigger_voice_alert():
-    """Trigger the voice alert agent to ask for user's location"""
-    import uuid
-    session_id = str(uuid.uuid4())
-    
-    # Get agent ID from environment or use default
-    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
-    
-    with VOICE_LOCK:
-        VOICE_AGENT_STATE["is_active"] = True
-        VOICE_AGENT_STATE["session_id"] = session_id
-        VOICE_AGENT_STATE["location"] = None
-    
-    # Create and store voice agent
-    agent = FireAlertVoiceAgent(session_id)
-    active_voice_sessions[session_id] = agent
-    
-    # Start voice agent in background task (use asyncio.create_task in async context)
-    task = asyncio.create_task(agent.run_fire_alert(agent_id))
-    # Don't await the task - let it run in background
-    
-    return {
-        "session_id": session_id,
-        "status": "started",
-        "message": "Voice alert agent activated. Please speak your location."
-    }
-
-
-@app.get("/voice_alert_stream/{session_id}")
-async def voice_alert_stream(session_id: str):
-    """Stream voice agent events (SSE)"""
-    async def event_generator():
-        if session_id not in active_voice_sessions:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Session not found'})}\n\n"
-            return
+@app.post("/trigger_fire_agent")
+async def trigger_fire_agent():
+    """
+    Trigger the fire alert agent when fire is detected.
+    The agent will automatically yell 'FIRE!' and ask where you are.
+    """
+    try:
+        # Get agent ID
+        agent_id = os.getenv("ELEVENLABS_AGENT_ID", "agent_4701k9k3jegye7armnes8xvznfsb")
         
-        agent = active_voice_sessions[session_id]
+        print("\n=== TRIGGERING FIRE ALERT AGENT ===")
+        print("🔥 FIRE DETECTED! Starting agent...\n")
         
-        # Send initial connection message
-        yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
+        # Create and run the fire alert agent
+        # The agent will automatically yell "FIRE!" and ask where you are
+        agent = FireAlertAgent()
         
-        # Poll for messages from the agent's callback queue
-        timeout = 60  # 60 second timeout
-        start_time = time.time()
+        # Start the agent in a background task
+        # This will trigger the agent to speak automatically through system audio
+        task = asyncio.create_task(agent.run_fire_alert(agent_id))
         
-        while time.time() - start_time < timeout:
-            try:
-                # Get message from queue (with timeout)
-                message = await asyncio.wait_for(agent.callback_queue.get(), timeout=1.0)
-                yield f"data: {json.dumps(message)}\n\n"
-                
-                # If location is detected, break
-                if message.get("type") == "location":
-                    # Clean up session after location is detected
-                    with VOICE_LOCK:
-                        VOICE_AGENT_STATE["location"] = message.get("location")
-                        VOICE_AGENT_STATE["is_active"] = False
-                    break
-                    
-            except asyncio.TimeoutError:
-                # Send heartbeat to keep connection alive
-                yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-                continue
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-                break
+        # Return immediately - agent is running in background
+        return {
+            "status": "started",
+            "message": "Fire alert agent activated. Agent is yelling 'FIRE!' and asking for your location."
+        }
         
-        # Clean up session
-        if session_id in active_voice_sessions:
-            del active_voice_sessions[session_id]
-    
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-
-@app.get("/get_voice_location/{session_id}")
-async def get_voice_location(session_id: str):
-    """Get the location from voice agent (polling endpoint)"""
-    with VOICE_LOCK:
-        if VOICE_AGENT_STATE["session_id"] == session_id:
-            location = VOICE_AGENT_STATE.get("location")
-            is_active = VOICE_AGENT_STATE.get("is_active", False)
-            
-            return {
-                "location": location,
-                "is_active": is_active,
-                "session_id": session_id
-            }
-        else:
-            return {
-                "location": None,
-                "is_active": False,
-                "session_id": session_id,
-                "error": "Session not found"
-            }
+    except Exception as e:
+        print(f"   Error triggering fire alert agent: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to trigger fire alert agent: {str(e)}")
 
 # --- 7. Run the Server ---
 
