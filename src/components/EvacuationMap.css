@@ -84,6 +84,42 @@
   pointer-events: none;
 }
 
+.map-node {
+  transition: all 0.2s ease;
+}
+
+.map-node:hover {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+}
+
+.map-node.danger-node:hover {
+  filter: drop-shadow(0 0 8px rgba(255, 59, 59, 0.8));
+}
+
+.camera-node {
+  transition: all 0.2s ease;
+}
+
+.camera-node:hover {
+  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.6));
+}
+
+.camera-node.fire-node:hover {
+  filter: drop-shadow(0 0 10px rgba(255, 59, 59, 0.8));
+}
+
+.safe-exit {
+  transition: all 0.2s ease;
+}
+
+.safe-exit:hover {
+  filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8));
+}
+
+.safe-exit.danger-exit:hover {
+  filter: drop-shadow(0 0 8px rgba(255, 59, 59, 0.8));
+}
+
 @keyframes pedestrian-move {
   0% {
     offset-distance: 0%;

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import './EvacuationMap.css'
 
-const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
+const EvacuationMap = ({ fireDetected, activeCamera, fireData, dangerNodes, evacuationPath, onNodeClick }) => {
   const svgRef = useRef(null)
 
   // All nodes with coordinates (matching stanford.png image dimensions: 1322x670)
@@ -73,8 +73,29 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
     name: node.name
   }))
 
-  // Generate evacuation routes from fire location to safe exits
+  // Generate evacuation routes from API path or from fire location to safe exits
   const getEvacuationRoutes = () => {
+    // If we have an evacuation path from API, render that
+    if (evacuationPath && evacuationPath.path && evacuationPath.path.length > 1) {
+      const pathNodes = evacuationPath.path.map(nodeId => {
+        const node = nodeMap.get(nodeId)
+        if (!node) return null
+        return { x: node.x, y: node.y, label: nodeId, name: node.name }
+      }).filter(Boolean)
+      
+      // Create route segments from the path
+      const routeSegments = []
+      for (let i = 0; i < pathNodes.length - 1; i++) {
+        routeSegments.push({
+          from: pathNodes[i],
+          to: pathNodes[i + 1],
+          id: `route-segment-${i}`
+        })
+      }
+      return routeSegments
+    }
+    
+    // Fallback to old behavior if no API path
     if (!fireDetected || !activeCamera) return []
     
     const firePos = cameraPositions[activeCamera]
@@ -88,7 +109,24 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
   }
 
   const routes = getEvacuationRoutes()
-  const firePosition = activeCamera ? cameraPositions[activeCamera] : null
+  
+  // Get fire position from danger nodes or active camera
+  const getFirePosition = () => {
+    if (dangerNodes && dangerNodes.size > 0) {
+      // Use the first danger node as fire position
+      const firstDangerNodeId = Array.from(dangerNodes)[0]
+      const dangerNode = nodeMap.get(firstDangerNodeId)
+      if (dangerNode) {
+        return { x: dangerNode.x, y: dangerNode.y }
+      }
+    }
+    if (activeCamera) {
+      return cameraPositions[activeCamera]
+    }
+    return null
+  }
+  
+  const firePosition = getFirePosition()
 
   // Get camera node IDs
   const cameraNodeIds = new Set(Object.values(cameraNodeMap))
@@ -154,8 +192,39 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
             })()}
           </g>
 
-          {/* Danger radius (when fire detected) */}
-          {fireDetected && firePosition && (
+          {/* Danger radius for each danger node */}
+          {dangerNodes && dangerNodes.size > 0 && Array.from(dangerNodes).map(dangerNodeId => {
+            const dangerNode = nodeMap.get(dangerNodeId)
+            if (!dangerNode) return null
+            
+            return (
+              <circle
+                key={`danger-radius-${dangerNodeId}`}
+                cx={dangerNode.x}
+                cy={dangerNode.y}
+                r="100"
+                fill="url(#dangerGradient)"
+                opacity="1"
+                className="danger-radius"
+              >
+                <animate
+                  attributeName="r"
+                  values="100;130;100"
+                  dur="2s"
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0.4;0.3;0.4"
+                  dur="2s"
+                  repeatCount="indefinite"
+                />
+              </circle>
+            )
+          })}
+          
+          {/* Fallback danger radius (when fire detected but no danger nodes) */}
+          {fireDetected && firePosition && (!dangerNodes || dangerNodes.size === 0) && (
             <circle
               cx={firePosition.x}
               cy={firePosition.y}
@@ -181,7 +250,11 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
 
           {/* Evacuation routes */}
           {routes.map((route, index) => {
-            const routePath = `M ${route.from.x} ${route.from.y} Q ${(route.from.x + route.to.x) / 2} ${(route.from.y + route.to.y) / 2} ${route.to.x} ${route.to.y}`
+            // Use straight line for API path segments, curved for old routes
+            const isApiPath = evacuationPath && evacuationPath.path
+            const routePath = isApiPath 
+              ? `M ${route.from.x} ${route.from.y} L ${route.to.x} ${route.to.y}`
+              : `M ${route.from.x} ${route.from.y} Q ${(route.from.x + route.to.x) / 2} ${(route.from.y + route.to.y) / 2} ${route.to.x} ${route.to.y}`
             return (
               <g key={route.id} className="evacuation-route">
                 {/* Hidden path for animation - must be defined first */}
@@ -195,29 +268,33 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                 {/* Visible route line */}
                 <path
                   d={routePath}
-                  stroke={fireDetected ? '#34D399' : 'transparent'}
+                  stroke={evacuationPath ? '#FF3B3B' : (fireDetected ? '#34D399' : 'transparent')}
                   strokeWidth="5"
                   fill="none"
                   strokeDasharray="2000"
-                  strokeDashoffset={fireDetected ? 0 : 2000}
+                  strokeDashoffset={(fireDetected || evacuationPath) ? 0 : 2000}
                   className="route-line"
                   style={{
-                    animation: fireDetected ? 'route-draw 1.2s ease-out forwards' : 'none',
-                    animationDelay: `${index * 0.2}s`
+                    animation: (fireDetected || evacuationPath) ? 'route-draw 1.2s ease-out forwards' : 'none',
+                    animationDelay: `${index * 0.1}s`,
+                    filter: evacuationPath ? 'drop-shadow(0 0 5px rgba(255, 59, 59, 0.6))' : undefined
                   }}
                 />
                 {/* Animated pedestrian dots along the route */}
-                {fireDetected && (
+                {(fireDetected || evacuationPath) && (
                   <circle
                     r="4"
-                    fill="#34D399"
+                    fill={evacuationPath ? '#FF3B3B' : '#34D399'}
                     className="pedestrian"
                     opacity="0.8"
+                    style={{
+                      filter: evacuationPath ? 'drop-shadow(0 0 3px rgba(255, 59, 59, 0.8))' : undefined
+                    }}
                   >
                     <animateMotion
                       dur="3s"
                       repeatCount="indefinite"
-                      begin={`${index * 0.5}s`}
+                      begin={`${index * 0.3}s`}
                     >
                       <mpath href={`#${route.id}-path`} />
                     </animateMotion>
@@ -233,26 +310,78 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
             )
           })}
 
-          {/* All nodes (non-exit, non-camera nodes) - Blue for safe nodes */}
+          {/* All nodes (non-exit, non-camera nodes) - Blue for safe nodes, Red for danger nodes */}
           {nodes.map(node => {
             const isCameraNode = cameraNodeIds.has(node.id)
             const isExitNode = node.exit_node
+            const isDangerNode = dangerNodes && dangerNodes.has(node.id)
 
             // Skip camera nodes and exit nodes (rendered separately)
             if (isCameraNode || isExitNode) return null
 
+            const nodeColor = isDangerNode ? '#FF3B3B' : '#3B82F6'
+
             return (
-              <g key={node.id} className="map-node">
+              <g 
+                key={node.id} 
+                className={`map-node ${isDangerNode ? 'danger-node' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onNodeClick && onNodeClick(node.id)}
+              >
+                {isDangerNode && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r="30"
+                    fill="none"
+                    stroke="#FF3B3B"
+                    strokeWidth="4"
+                    opacity="0.8"
+                    className="node-halo"
+                  >
+                    <animate
+                      attributeName="r"
+                      values="30;40;30"
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                )}
                 <circle
                   cx={node.x}
                   cy={node.y}
                   r="8"
-                  fill="#3B82F6"
+                  fill={nodeColor}
                   stroke="#FFFFFF"
                   strokeWidth="2"
                   className="node-dot"
                   opacity="1"
-                />
+                >
+                  {isDangerNode && (
+                    <animate
+                      attributeName="r"
+                      values="8;12;8"
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                  )}
+                </circle>
+                {/* Node label */}
+                <text
+                  x={node.x}
+                  y={node.y - 12}
+                  fill={isDangerNode ? '#FF3B3B' : '#FFFFFF'}
+                  fontSize="9"
+                  fontWeight="600"
+                  textAnchor="middle"
+                  className="node-label"
+                  stroke="#000000"
+                  strokeWidth="0.5"
+                  paintOrder="stroke"
+                  pointerEvents="none"
+                >
+                  {node.id}
+                </text>
               </g>
             )
           })}
@@ -263,19 +392,27 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
             const nodeId = cameraNodeMap[cameraId]
             const node = nodeMap.get(nodeId)
             const isExitNode = node?.exit_node || false
+            const isDangerNode = dangerNodes && dangerNodes.has(nodeId)
 
-            // Determine node color: Red for fire, Green for exit, Blue for safe
+            // Determine node color: Red for fire/danger, Green for exit, Blue for safe
             let nodeColor = '#3B82F6' // Blue for safe
-            if (isFireNode) {
+            if (isFireNode || isDangerNode) {
               nodeColor = '#FF3B3B' // Red for fire danger
             } else if (isExitNode) {
               nodeColor = '#34D399' // Green for exit
             }
 
+            const showDangerEffects = isFireNode || isDangerNode
+
             return (
-              <g key={cameraId} className={`camera-node ${isFireNode ? 'fire-node' : ''}`}>
-                {/* Pulsing halo for fire node */}
-                {isFireNode && (
+              <g 
+                key={cameraId} 
+                className={`camera-node ${showDangerEffects ? 'fire-node' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onNodeClick && onNodeClick(nodeId)}
+              >
+                {/* Pulsing halo for fire/danger node */}
+                {showDangerEffects && (
                   <circle
                     cx={pos.x}
                     cy={pos.y}
@@ -304,7 +441,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   strokeWidth="3"
                   className="node-dot"
                 >
-                  {isFireNode && (
+                  {showDangerEffects && (
                     <animate
                       attributeName="r"
                       values="12;16;12"
@@ -317,7 +454,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                 <text
                   x={pos.x}
                   y={pos.y - 18}
-                  fill={isFireNode ? '#FF3B3B' : (isExitNode ? '#34D399' : '#E4E4E4')}
+                  fill={showDangerEffects ? '#FF3B3B' : (isExitNode ? '#34D399' : '#E4E4E4')}
                   fontSize="14"
                   fontWeight="700"
                   textAnchor="middle"
@@ -325,6 +462,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   stroke="#000000"
                   strokeWidth="0.8"
                   paintOrder="stroke"
+                  pointerEvents="none"
                 >
                   {cameraId}
                 </text>
@@ -339,11 +477,12 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   stroke="#000000"
                   strokeWidth="0.5"
                   paintOrder="stroke"
+                  pointerEvents="none"
                 >
                   {pos.label}
                 </text>
                 {/* Exit indicator for camera nodes that are also exits */}
-                {isExitNode && !isFireNode && (
+                {isExitNode && !showDangerEffects && (
                   <text
                     x={pos.x}
                     y={pos.y + 22}
@@ -355,6 +494,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                     stroke="#000000"
                     strokeWidth="0.5"
                     paintOrder="stroke"
+                    pointerEvents="none"
                   >
                     EXIT
                   </text>
@@ -369,21 +509,57 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
             const exitNodeId = exit.label
             if (cameraNodeIds.has(exitNodeId)) return null
             
+            const isDangerNode = dangerNodes && dangerNodes.has(exitNodeId)
+            const exitColor = isDangerNode ? '#FF3B3B' : '#34D399'
+            
             return (
-              <g key={exit.label} className="safe-exit">
+              <g 
+                key={exit.label} 
+                className={`safe-exit ${isDangerNode ? 'danger-exit' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onNodeClick && onNodeClick(exitNodeId)}
+              >
+                {isDangerNode && (
+                  <circle
+                    cx={exit.x}
+                    cy={exit.y}
+                    r="30"
+                    fill="none"
+                    stroke="#FF3B3B"
+                    strokeWidth="4"
+                    opacity="0.8"
+                    className="node-halo"
+                  >
+                    <animate
+                      attributeName="r"
+                      values="30;40;30"
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                )}
                 <circle
                   cx={exit.x}
                   cy={exit.y}
                   r="10"
-                  fill="#34D399"
+                  fill={exitColor}
                   stroke="#FFFFFF"
                   strokeWidth="3"
                   opacity="1"
-                />
+                >
+                  {isDangerNode && (
+                    <animate
+                      attributeName="r"
+                      values="10;14;10"
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                  )}
+                </circle>
                 <text
                   x={exit.x}
                   y={exit.y - 12}
-                  fill="#34D399"
+                  fill={exitColor}
                   fontSize="10"
                   fontWeight="700"
                   textAnchor="middle"
@@ -391,13 +567,14 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   stroke="#000000"
                   strokeWidth="0.5"
                   paintOrder="stroke"
+                  pointerEvents="none"
                 >
                   {exit.label}
                 </text>
                 <text
                   x={exit.x}
                   y={exit.y + 20}
-                  fill="#34D399"
+                  fill={exitColor}
                   fontSize="8"
                   fontWeight="600"
                   textAnchor="middle"
@@ -405,6 +582,7 @@ const EvacuationMap = ({ fireDetected, activeCamera, fireData }) => {
                   stroke="#000000"
                   strokeWidth="0.5"
                   paintOrder="stroke"
+                  pointerEvents="none"
                 >
                   EXIT
                 </text>

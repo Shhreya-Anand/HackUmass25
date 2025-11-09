@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import SurveillanceGrid from './SurveillanceGrid'
 import EvacuationMap from './EvacuationMap'
 import Timeline from './Timeline'
@@ -13,26 +13,65 @@ const Dashboard = () => {
   const [timelineEvents, setTimelineEvents] = useState([
     { time: '13:24', event: 'Normal monitoring', active: true }
   ])
+  const [dangerNodes, setDangerNodes] = useState(new Set())
+  const [evacuationPath, setEvacuationPath] = useState(null)
 
-  // Simulate fire detection after 5 seconds for demo
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      triggerFireDetection('Camera C', {
-        location: 'Hoover Tower Road',
-        confidence: 97,
-        time: '13:26:05'
+  const handleNodeClick = async (nodeId) => {
+    try {
+      const response = await fetch(`http://localhost:8080/get_path?start_node=${nodeId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch evacuation path')
+      }
+      const data = await response.json()
+
+      // Update danger nodes - add new live_danger_nodes to the set
+      setDangerNodes(prev => {
+        const newSet = new Set(prev)
+        data.live_danger_nodes.forEach(nodeId => newSet.add(nodeId))
+        return newSet
       })
-    }, 5000)
 
-    return () => clearTimeout(timer)
-  }, [])
+      // Set fire detected if we have danger nodes
+      if (data.live_danger_nodes.length > 0) {
+        setFireDetected(true)
+        setSystemMode('ALERT')
+
+        setTimelineEvents([
+          { time: '13:24', event: 'Normal monitoring', active: false },
+          { time: '13:25', event: 'Heat anomaly detected', active: false },
+          { time: '13:26', event: 'Fire confirmed', active: true },
+          { time: '13:26', event: 'Evacuation route activated', active: true }
+        ])
+
+        // Play alert sound (optional - will fail silently if file doesn't exist)
+        try {
+          const audio = new Audio('/sounds/alert.mp3')
+          audio.volume = 0.3
+          audio.play().catch(() => {
+            // Audio file not found - this is optional
+          })
+        } catch (err) {
+          // Audio not available - continue without sound
+        }
+      }
+
+      // Store evacuation path data
+      setEvacuationPath({
+        path: data.path,
+        cost: data.cost,
+        startNode: nodeId
+      })
+    } catch (error) {
+      console.error('Error fetching evacuation path:', error)
+    }
+  }
 
   const triggerFireDetection = (cameraId, data) => {
     setFireDetected(true)
     setActiveCamera(cameraId)
     setFireData(data)
     setSystemMode('ALERT')
-    
+
     setTimelineEvents([
       { time: '13:24', event: 'Normal monitoring', active: false },
       { time: '13:25', event: 'Heat anomaly detected', active: false },
@@ -57,6 +96,8 @@ const Dashboard = () => {
     setActiveCamera(null)
     setFireData(null)
     setSystemMode('NORMAL')
+    setDangerNodes(new Set())
+    setEvacuationPath(null)
     setTimelineEvents([
       { time: '13:24', event: 'Normal monitoring', active: true }
     ])
@@ -66,20 +107,23 @@ const Dashboard = () => {
     <div className="dashboard">
       <div className="dashboard-main">
         <div className="dashboard-left">
-          <SurveillanceGrid 
+          <SurveillanceGrid
             fireDetected={fireDetected}
             activeCamera={activeCamera}
             fireData={fireData}
           />
         </div>
         <div className="dashboard-right">
-          <EvacuationMap 
+          <EvacuationMap
             fireDetected={fireDetected}
             activeCamera={activeCamera}
             fireData={fireData}
+            dangerNodes={dangerNodes}
+            evacuationPath={evacuationPath}
+            onNodeClick={handleNodeClick}
           />
           {fireDetected && (
-            <AlertPanel 
+            <AlertPanel
               fireData={fireData}
               activeCamera={activeCamera}
             />
@@ -87,7 +131,7 @@ const Dashboard = () => {
         </div>
       </div>
       <div className="dashboard-bottom">
-        <Timeline 
+        <Timeline
           events={timelineEvents}
           systemMode={systemMode}
           fireDetected={fireDetected}
